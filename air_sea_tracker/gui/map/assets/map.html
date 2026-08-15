@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+  html, body, #map { height: 100%; margin: 0; padding: 0; background: #0B1120; }
+  .target-icon {
+    font-size: 18px;
+    line-height: 18px;
+    text-align: center;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+    transform-origin: center center;
+  }
+  .target-icon.aircraft { color: #3B82F6; }
+  .target-icon.vessel { color: #22D3EE; }
+  .target-icon.selected { color: #FBBF24; filter: drop-shadow(0 0 4px #FBBF24); }
+  .leaflet-popup-content { font: 12px/1.4 -apple-system, sans-serif; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+<script>
+  const map = L.map('map', { zoomControl: false }).setView([20, 0], 3);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors',
+    maxZoom: 19,
+  }).addTo(map);
+
+  let observerMarker = null;
+  let radiusCircle = null;
+  const markers = {};   // target_id -> L.marker
+  let selectedId = null;
+  let bridge = null;
+
+  function arrowIcon(category, heading, selected) {
+    const cls = 'target-icon ' + category + (selected ? ' selected' : '');
+    const glyph = category === 'aircraft' ? '&#9992;' : '&#9973;';
+    const rot = heading != null ? `transform: rotate(${heading}deg);` : '';
+    return L.divIcon({
+      className: '',
+      html: `<div class="${cls}" style="${rot}">${glyph}</div>`,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+    });
+  }
+
+  function setObserver(lat, lon) {
+    if (observerMarker) map.removeLayer(observerMarker);
+    observerMarker = L.circleMarker([lat, lon], {
+      radius: 6, color: '#3B82F6', fillColor: '#3B82F6', fillOpacity: 1,
+    }).addTo(map);
+    map.setView([lat, lon], map.getZoom() < 5 ? 8 : map.getZoom());
+    if (radiusCircle) radiusCircle.setLatLng([lat, lon]);
+  }
+
+  function setRadiusKm(lat, lon, radiusKm) {
+    const meters = radiusKm * 1000;
+    if (radiusCircle) {
+      radiusCircle.setLatLng([lat, lon]);
+      radiusCircle.setRadius(meters);
+    } else {
+      radiusCircle = L.circle([lat, lon], {
+        radius: meters, color: '#3B82F6', weight: 1, fillOpacity: 0.04,
+      }).addTo(map);
+    }
+  }
+
+  function upsertMarker(id, lat, lon, heading, category, label) {
+    const icon = arrowIcon(category, heading, id === selectedId);
+    if (markers[id]) {
+      markers[id].setLatLng([lat, lon]);
+      markers[id].setIcon(icon);
+      markers[id].bindTooltip(label);
+    } else {
+      const m = L.marker([lat, lon], { icon }).addTo(map);
+      m.bindTooltip(label, { direction: 'top' });
+      m.on('click', () => { if (bridge) bridge.on_marker_clicked(id); });
+      markers[id] = m;
+    }
+  }
+
+  function removeMarker(id) {
+    if (markers[id]) {
+      map.removeLayer(markers[id]);
+      delete markers[id];
+    }
+  }
+
+  function syncMarkers(list) {
+    const seen = new Set();
+    for (const t of list) {
+      seen.add(t.id);
+      upsertMarker(t.id, t.lat, t.lon, t.heading, t.category, t.label);
+    }
+    for (const id of Object.keys(markers)) {
+      if (!seen.has(id)) removeMarker(id);
+    }
+  }
+
+  function highlightMarker(id) {
+    selectedId = id;
+    for (const [mid, m] of Object.entries(markers)) {
+      const el = m.getElement();
+      if (!el) continue;
+      const child = el.querySelector('.target-icon');
+      if (child) child.classList.toggle('selected', mid === id);
+    }
+  }
+
+  window.setObserver = setObserver;
+  window.setRadiusKm = setRadiusKm;
+  window.syncMarkers = syncMarkers;
+  window.highlightMarker = highlightMarker;
+
+  if (window.qt && window.qt.webChannelTransport) {
+    new QWebChannel(qt.webChannelTransport, function(channel) {
+      bridge = channel.objects.bridge;
+    });
+  }
+</script>
+</body>
+</html>
