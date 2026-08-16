@@ -8,48 +8,48 @@ quota the same way and generally don't need this.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
 
 from config.settings import Settings
-
-
-@dataclass
-class QuotaState:
-    used: int = 0
-    limit: int = 400
-    resets_at: float = 0.0  # unix timestamp of next daily reset
-
-    @property
-    def remaining(self) -> int:
-        return max(0, self.limit - self.used)
 
 
 class RateLimiter:
     """Tracks quota usage for one named source and applies backoff.
 
-    The backoff deadline is persisted (SDR §27) — not just held in memory —
-    because a server-side 429 (e.g. OpenSky's real per-IP throttle, which
-    can hand out an hours-long Retry-After) must survive an app restart.
-    An in-memory-only backoff would let every relaunch immediately retry
-    and get blocked again, which at best does nothing and at worst resets
-    or extends the server's own cooldown timer.
+    Both the daily used-count and the backoff deadline are persisted via
+    Settings (SDR §27), not just held in memory: the count needs to
+    survive a restart to mean anything as a real "X/400 today" display
+    (SDR §27.6), and the backoff deadline must survive one because a
+    server-side 429 (e.g. OpenSky's real per-IP throttle, which can hand
+    out an hours-long Retry-After) would otherwise let every relaunch
+    immediately retry and get blocked again.
     """
 
     def __init__(self, name: str, daily_limit: int) -> None:
         self.name = name
-        self.state = QuotaState(limit=daily_limit, resets_at=self._next_midnight_utc())
+        self.limit = daily_limit
         self._settings = Settings()
+        self._used_key = f"quota/{name}/used"
+        self._period_key = f"quota/{name}/period"
         self._backoff_key = f"backoff/{name}/until"
 
     @staticmethod
-    def _next_midnight_utc() -> float:
-        now = time.time()
-        return (now // 86400 + 1) * 86400
+    def _current_period() -> str:
+        return time.strftime("%Y-%m-%d", time.gmtime())
 
     def _maybe_reset(self) -> None:
-        if time.time() >= self.state.resets_at:
-            self.state.used = 0
-            self.state.resets_at = self._next_midnight_utc()
+        current = self._current_period()
+        if self._settings.get(self._period_key) != current:
+            self._settings.set(self._period_key, current)
+            self._settings.set(self._used_key, 0)
+
+    @property
+    def used(self) -> int:
+        self._maybe_reset()
+        return int(self._settings.get(self._used_key, 0))
+
+    @property
+    def remaining(self) -> int:
+        return max(0, self.limit - self.used)
 
     def backoff_seconds_remaining(self) -> float:
         until = self._settings.get(self._backoff_key)
@@ -61,18 +61,17 @@ class RateLimiter:
         self._maybe_reset()
         if self.backoff_seconds_remaining() > 0:
             return False
-        return self.state.remaining >= cost
+        return self.remaining >= cost
 
     def record_call(self, cost: int = 1) -> None:
         self._maybe_reset()
-        self.state.used += cost
+        self._settings.set(self._used_key, self.used + cost)
 
     def apply_backoff(self, seconds: float) -> None:
         self._settings.set(self._backoff_key, time.time() + seconds)
 
     def quota_summary(self) -> str:
-        self._maybe_reset()
-        return f"{self.state.used} / {self.state.limit} credits today"
+        return f"{self.used} / {self.limit} credits today"
 
 
 class MonthlyRateLimiter:

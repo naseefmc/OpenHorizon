@@ -84,4 +84,21 @@ class ThemeManager(QObject):
         QPushButton[role="nav"]:checked {{
             background-color: {t['selection']};
         }}
+        QCheckBox {{
+            spacing: 8px;
+        }}
+        QCheckBox::indicator {{
+            width: 14px;
+            height: 14px;
+            border: 1px solid {t['border']};
+            border-radius: 4px;
+            background-color: {t['surface']};
+        }}
+        QCheckBox::indicator:checked {{
+            background-color: {t['accent']};
+            border-color: {t['accent']};
+        }}
+        QCheckBox::indicator:hover {{
+            border-color: {t['accent_hover']};
+        }}
         """

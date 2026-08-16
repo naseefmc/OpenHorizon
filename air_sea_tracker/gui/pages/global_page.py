@@ -8,13 +8,15 @@ full live cache, filtered only by Air/Sea.
 from __future__ import annotations
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QSplitter, QVBoxLayout, QWidget
 from PySide6.QtCore import Qt
 
 from gui.map.live_map import LiveMap
 from gui.tables.target_table import TargetTable
 from models.aircraft import Aircraft
 from services.target_manager import TargetManager
+from utils.time_format import age_label
+from utils.units import speed_label
 
 REFRESH_MS = 5000  # SDR §7: global refresh cadence is source-dependent, coarser than Nearby's 1-5s
 
@@ -37,8 +39,12 @@ class GlobalPage(QWidget):
         self.sea_checkbox.setChecked(True)
         self.sea_checkbox.toggled.connect(self.refresh)
         filters_row.addWidget(self.air_checkbox)
+        filters_row.addSpacing(40)
         filters_row.addWidget(self.sea_checkbox)
         filters_row.addStretch(1)
+        self.status_label = QLabel("")
+        self.status_label.setProperty("role", "secondary")
+        filters_row.addWidget(self.status_label)
         root.addLayout(filters_row)
 
         center = QSplitter(Qt.Vertical)
@@ -85,12 +91,22 @@ class GlobalPage(QWidget):
                 "type": "Aircraft" if is_aircraft else "Vessel",
                 "name": label,
                 "distance": "—",
-                "speed": f"{(target.ground_speed if is_aircraft else target.speed_over_ground) or 0:.0f} kt",
+                "speed": speed_label(target.ground_speed if is_aircraft else target.speed_over_ground),
                 "heading": f"{heading:.0f}°" if heading is not None else "—",
                 "altitude_status": f"{target.altitude_m:.0f} m" if is_aircraft and target.altitude_m else "—",
                 "destination": "—" if is_aircraft else (target.destination or "—"),
-                "updated": "live",
+                "updated": age_label(target.last_update),
             })
 
         self.live_map.sync_markers(markers)
         self.table.model_.replace_rows(rows)
+
+        n_air = sum(1 for r in rows if r["type"] == "Aircraft")
+        n_sea = len(rows) - n_air
+        if not rows:
+            self.status_label.setText(
+                "No live targets cached right now — depends on which AIS/ADS-B "
+                "providers are currently connected (see Settings → Data Sources)."
+            )
+        else:
+            self.status_label.setText(f"Showing {n_air} aircraft, {n_sea} vessels — everything currently cached")

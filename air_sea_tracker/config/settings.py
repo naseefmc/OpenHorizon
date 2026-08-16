@@ -76,3 +76,14 @@ class Settings:
     @history_retention_days.setter
     def history_retention_days(self, value: int) -> None:
         self.set("history/retention_days", value)
+
+    @property
+    def observer_altitude_m(self) -> float:
+        """Height of the observer above the surface, for True Visibility
+        Mode's geometric-horizon calculation (SDR §19). Default 2m: a
+        person standing at sea level, not an elevated vantage point."""
+        return float(self.get("observer/altitude_m", 2.0))
+
+    @observer_altitude_m.setter
+    def observer_altitude_m(self, value: float) -> None:
+        self.set("observer/altitude_m", value)

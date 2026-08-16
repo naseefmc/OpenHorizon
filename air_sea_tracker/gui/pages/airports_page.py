@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QSpinBox, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QListWidgetItem, QSpinBox, QVBoxLayout, QWidget,
 )
 
+from gui.widgets.copyable_list import CopyableListWidget
 from services import airport_service, geofence_service
 from services.target_manager import TargetManager
 
@@ -38,7 +39,7 @@ class AirportsPage(QWidget):
         count_row.addWidget(self.count_spin)
         left.addLayout(count_row)
 
-        self.airport_list = QListWidget()
+        self.airport_list = CopyableListWidget()
         self.airport_list.currentItemChanged.connect(self._on_airport_selected)
         left.addWidget(self.airport_list)
         left_widget = QWidget()
@@ -55,7 +56,7 @@ class AirportsPage(QWidget):
         note.setProperty("role", "secondary")
         right.addWidget(note)
 
-        self.status_lists: dict[str, QListWidget] = {}
+        self.status_lists: dict[str, CopyableListWidget] = {}
         groups_row = QHBoxLayout()
         for status in [
             geofence_service.STATUS_ON_GROUND, geofence_service.STATUS_AIRPORT_APPROACHING,
@@ -63,7 +64,7 @@ class AirportsPage(QWidget):
         ]:
             col = QVBoxLayout()
             col.addWidget(QLabel(status))
-            lst = QListWidget()
+            lst = CopyableListWidget()
             self.status_lists[status] = lst
             col.addWidget(lst)
             groups_row.addLayout(col)
@@ -112,10 +113,12 @@ class AirportsPage(QWidget):
             self.detail_label.setText("Select an airport")
             return
 
-        self.detail_label.setText(airport.name)
         aircraft_list = self._target_manager.all_aircraft()
+        self.detail_label.setText(f"{airport.name} · {len(aircraft_list)} aircraft currently live")
         groups = geofence_service.airport_traffic(airport, aircraft_list)
         for status, group in groups.items():
             lst = self.status_lists[status]
             for a in group:
                 lst.addItem(a.callsign or a.registration or a.icao24)
+            if not group:
+                lst.addItem("—")

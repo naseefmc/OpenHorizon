@@ -28,10 +28,29 @@
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <script>
   const map = L.map('map', { zoomControl: false }).setView([20, 0], 3);
-  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  const lightLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors',
     maxZoom: 19,
   }).addTo(map);
+  const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    maxZoom: 19,
+  });
+  let darkLayerActive = false;
+
+  function toggleDarkLayer() {
+    if (darkLayerActive) {
+      map.removeLayer(darkLayer);
+      map.addLayer(lightLayer);
+    } else {
+      map.removeLayer(lightLayer);
+      map.addLayer(darkLayer);
+    }
+    darkLayerActive = !darkLayerActive;
+  }
+
+  function zoomIn() { map.zoomIn(); }
+  function zoomOut() { map.zoomOut(); }
 
   let observerMarker = null;
   let radiusCircle = null;
@@ -114,7 +133,15 @@
   function drawTrack(points) {
     // points: [[lat, lon], ...] oldest first (SDR §8, §16 "historical track lines")
     if (trackLine) { map.removeLayer(trackLine); trackLine = null; }
-    if (!points || points.length < 2) return;
+    if (!points || points.length === 0) return;
+    if (points.length === 1) {
+      // A single point can't form a polyline/bounds — still recenter the
+      // map on it instead of silently leaving the view wherever it was
+      // (previously: nothing visibly happened for a 1-point track).
+      map.setView(points[0], 12);
+      trackLine = L.circleMarker(points[0], { radius: 6, color: '#FBBF24', fillColor: '#FBBF24', fillOpacity: 1 }).addTo(map);
+      return;
+    }
     trackLine = L.polyline(points, { color: '#FBBF24', weight: 2, opacity: 0.8 }).addTo(map);
     map.fitBounds(trackLine.getBounds(), { padding: [40, 40] });
   }
@@ -139,6 +166,9 @@
   window.highlightMarker = highlightMarker;
   window.drawTrack = drawTrack;
   window.clearTrack = clearTrack;
+  window.zoomIn = zoomIn;
+  window.zoomOut = zoomOut;
+  window.toggleDarkLayer = toggleDarkLayer;
 
   if (window.qt && window.qt.webChannelTransport) {
     new QWebChannel(qt.webChannelTransport, function(channel) {

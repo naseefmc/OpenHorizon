@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from typing import Callable
+
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
@@ -25,6 +27,9 @@ from config.credentials import (
 )
 from config.settings import Settings
 from gui.theme.theme_manager import ThemeManager
+from services.rate_limiter import MonthlyRateLimiter, RateLimiter
+
+QUOTA_REFRESH_MS = 10_000
 
 CATEGORIES = [
     "General", "Appearance", "Tracking", "Data Sources",
@@ -41,6 +46,7 @@ class SettingsPage(QWidget):
         super().__init__(parent)
         self._settings = settings
         self._theme_manager = theme_manager
+        self._quota_labels: dict[QLabel, Callable[[], str]] = {}
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("SETTINGS"))
@@ -83,13 +89,39 @@ class SettingsPage(QWidget):
             sources_form, "VesselAPI", VESSELAPI_API_KEY, "VesselAPI API key",
             "Not configured — dashboard.vesselapi.com (150 calls/month on the free tier)",
         )
+        self._add_quota_row(
+            sources_form, MonthlyRateLimiter(name="vesselapi", monthly_limit=150).quota_summary
+        )
 
         opensky_note = QLabel("OpenSky (ADS-B) — anonymous free tier, no key required")
         opensky_note.setProperty("role", "secondary")
         sources_form.addRow("OpenSky", opensky_note)
+        self._add_quota_row(
+            sources_form, RateLimiter(name="opensky", daily_limit=400).quota_summary
+        )
 
         layout.addLayout(sources_form)
         layout.addStretch()
+
+        self._quota_timer = QTimer(self)
+        self._quota_timer.setInterval(QUOTA_REFRESH_MS)
+        self._quota_timer.timeout.connect(self._refresh_quota_labels)
+        self._quota_timer.start()
+        self._refresh_quota_labels()
+
+    def _add_quota_row(self, form: QFormLayout, summary_fn: Callable[[], str]) -> None:
+        """Reads directly from the same persisted Settings keys the real
+        provider/collector writes to (SDR §27.6) — no live provider
+        reference needed, so this works whether or not that source is
+        currently connected."""
+        label = QLabel(summary_fn())
+        label.setProperty("role", "secondary")
+        form.addRow("", label)
+        self._quota_labels[label] = summary_fn
+
+    def _refresh_quota_labels(self) -> None:
+        for label, summary_fn in self._quota_labels.items():
+            label.setText(summary_fn())
 
     def _add_credential_row(
         self,

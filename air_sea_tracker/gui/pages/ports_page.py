@@ -10,11 +10,12 @@ from __future__ import annotations
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QPushButton,
+    QHBoxLayout, QLabel, QListWidgetItem, QPushButton,
     QSpinBox, QSplitter, QVBoxLayout, QWidget,
 )
 from PySide6.QtCore import Qt
 
+from gui.widgets.copyable_list import CopyableListWidget
 from services import geofence_service, port_service
 from services.target_manager import TargetManager
 
@@ -40,7 +41,7 @@ class PortsPage(QWidget):
         count_row.addWidget(self.count_spin)
         left.addLayout(count_row)
 
-        self.port_list = QListWidget()
+        self.port_list = CopyableListWidget()
         self.port_list.currentItemChanged.connect(self._on_port_selected)
         left.addWidget(self.port_list)
         left_widget = QWidget()
@@ -53,7 +54,7 @@ class PortsPage(QWidget):
         self.detail_label.setStyleSheet("font-size: 16px; font-weight: 600;")
         right.addWidget(self.detail_label)
 
-        self.status_lists: dict[str, QListWidget] = {}
+        self.status_lists: dict[str, CopyableListWidget] = {}
         groups_row = QHBoxLayout()
         for status in [
             geofence_service.STATUS_IN_PORT, geofence_service.STATUS_ANCHORED,
@@ -62,7 +63,7 @@ class PortsPage(QWidget):
         ]:
             col = QVBoxLayout()
             col.addWidget(QLabel(status))
-            lst = QListWidget()
+            lst = CopyableListWidget()
             self.status_lists[status] = lst
             col.addWidget(lst)
             groups_row.addLayout(col)
@@ -80,7 +81,7 @@ class PortsPage(QWidget):
         radar_row.addStretch(1)
         right.addLayout(radar_row)
 
-        self.radar_list = QListWidget()
+        self.radar_list = CopyableListWidget()
         right.addWidget(self.radar_list)
 
         root.addLayout(right, stretch=1)
@@ -127,14 +128,20 @@ class PortsPage(QWidget):
             self.detail_label.setText("Select a port")
             return
 
-        self.detail_label.setText(f"{port.name} — geofence {port.geofence_radius_km:.0f} km")
         vessels = self._target_manager.all_vessels()
+        self.detail_label.setText(
+            f"{port.name} — geofence {port.geofence_radius_km:.0f} km · {len(vessels)} vessel(s) currently live"
+        )
         groups = geofence_service.port_traffic(port, vessels)
         for status, vessel_list in groups.items():
             lst = self.status_lists[status]
             for v in vessel_list:
                 lst.addItem(v.name or v.mmsi)
+            if not vessel_list:
+                lst.addItem("—")
 
         radar_hits = geofence_service.inbound_radar(port, vessels, self.radar_radius_spin.value())
         for vessel, distance_km in radar_hits:
             self.radar_list.addItem(f"{vessel.name or vessel.mmsi} — {distance_km:.0f} km out, heading in")
+        if not radar_hits:
+            self.radar_list.addItem("No inbound vessels detected in range")

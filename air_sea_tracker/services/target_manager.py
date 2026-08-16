@@ -19,6 +19,7 @@ from models.vessel import Vessel
 from services.cache_service import AIRCRAFT_TTL_SECONDS, VESSEL_TTL_SECONDS, LiveTargetCache
 from services.geo_service import distance_and_bearing
 from utils.distance import haversine_km
+from utils.time_format import age_label
 from utils.units import ms_to_kt, speed_label
 
 # SDR §26.5: skip a history point unless position/speed/heading changed
@@ -28,6 +29,16 @@ HISTORY_MIN_INTERVAL_SECONDS = 60.0
 HISTORY_MIN_DISTANCE_KM = 0.1
 HISTORY_MIN_HEADING_DELTA = 10.0
 HISTORY_MIN_SPEED_DELTA = 2.0
+
+# SDR §26.1's 600s default vessel TTL assumes a live push feed (AISStream)
+# keeps re-refreshing well within that window. Poll-based sources have a
+# real gap between updates — VesselAPI polls every 1800s (§1.1: rate-
+# limited fallback) — so a flat 600s TTL guarantees every VesselAPI vessel
+# "expires" and vanishes from the live cache, map, and every page reading
+# it (Ports/Airports/Global) for the ~20 minutes between polls. Per-source
+# overrides keep the tight default for genuinely fast sources while giving
+# slow pollers enough TTL to survive to their own next update.
+VESSEL_TTL_OVERRIDES = {"vesselapi": 2400}  # 1800s poll interval + margin
 
 
 class TargetManager:
@@ -55,6 +66,12 @@ class TargetManager:
     def all_aircraft(self) -> list[Aircraft]:
         return [t for t in self.cache.values() if isinstance(t, Aircraft)]
 
+    def get_target(self, target_id: str) -> Aircraft | Vessel | None:
+        for t in self.cache.values():
+            if t.target_id == target_id:
+                return t
+        return None
+
     def _load_persisted(self, db_conn: sqlite3.Connection) -> None:
         """Restore last-known positions from disk on startup (SDR §26.6,
         §26.4) so the map/table aren't empty while providers reconnect,
@@ -63,7 +80,8 @@ class TargetManager:
         Entries past their normal TTL are dropped rather than loaded."""
         now = datetime.now(timezone.utc)
         for vessel in repository.load_vessels(db_conn):
-            remaining = self._remaining_ttl(vessel.last_update, now, VESSEL_TTL_SECONDS)
+            ttl = VESSEL_TTL_OVERRIDES.get(vessel.source, VESSEL_TTL_SECONDS)
+            remaining = self._remaining_ttl(vessel.last_update, now, ttl)
             if remaining > 0:
                 self.cache.put(f"vessel:{vessel.target_id}", vessel, remaining)
         for aircraft in repository.load_aircraft(db_conn):
@@ -149,7 +167,7 @@ class TargetManager:
             # sentinel, a real 0.0 here is trustworthy and must not be dropped.
             updates = {k: v for k, v in vessel.__dict__.items() if v not in (None, "")}
             vessel = replace(existing, **updates)
-        self.cache.put(key, vessel, VESSEL_TTL_SECONDS)
+        self.cache.put(key, vessel, VESSEL_TTL_OVERRIDES.get(vessel.source, VESSEL_TTL_SECONDS))
         heading = vessel.effective_heading
         self._maybe_record_history(
             vessel.target_id, "vessel", vessel.latitude, vessel.longitude,
@@ -267,7 +285,7 @@ class TargetManager:
                         else (f"{target.altitude_m:.0f} m" if target.altitude_m is not None else "—")
                     ),
                     "destination": "—",
-                    "updated": self._age_label(target.last_update),
+                    "updated": age_label(target.last_update),
                 })
             else:
                 rows.append({
@@ -282,19 +300,6 @@ class TargetManager:
                     ),
                     "altitude_status": target.navigation_status or "—",
                     "destination": target.destination or "—",
-                    "updated": self._age_label(target.last_update),
+                    "updated": age_label(target.last_update),
                 })
         return rows
-
-    @staticmethod
-    def _age_label(last_update: datetime | None) -> str:
-        if last_update is None:
-            return "—"
-        now = datetime.now(timezone.utc)
-        ts = last_update if last_update.tzinfo else last_update.replace(tzinfo=timezone.utc)
-        age = (now - ts).total_seconds()
-        if age < 5:
-            return "live"
-        if age < 60:
-            return f"{int(age)}s ago"
-        return f"{int(age // 60)}m ago"

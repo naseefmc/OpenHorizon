@@ -1,6 +1,8 @@
-"""Observer-relative geographic calculations (SDR §18)."""
+"""Observer-relative geographic calculations (SDR §18-19)."""
 
 from __future__ import annotations
+
+import math
 
 from utils.distance import bearing_deg, haversine_km, slant_distance_km
 
@@ -19,6 +21,25 @@ def aircraft_slant_range_km(horizontal_km: float, altitude_m: float | None) -> f
     if not altitude_m:
         return horizontal_km
     return slant_distance_km(horizontal_km, altitude_m)
+
+
+def geometric_horizon_km(altitude_m: float | None) -> float:
+    """Distance to the geometric horizon from a given height above the
+    surface, using the standard 3.57*sqrt(h) approximation (accounts for
+    typical atmospheric refraction) — SDR §19."""
+    if not altitude_m or altitude_m <= 0:
+        return 0.0
+    return 3.57 * math.sqrt(altitude_m)
+
+
+def is_geometrically_visible(
+    distance_km: float, observer_altitude_m: float, target_altitude_m: float | None
+) -> bool:
+    """True range (line-of-sight over the curved earth) vs. simple distance
+    (SDR §19): a target can be within `distance_km` yet still be below the
+    horizon if both observer and target are low enough."""
+    max_range_km = geometric_horizon_km(observer_altitude_m) + geometric_horizon_km(target_altitude_m)
+    return distance_km <= max_range_km
 
 
 def is_within_radius(

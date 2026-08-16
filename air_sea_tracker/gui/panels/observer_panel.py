@@ -32,6 +32,7 @@ class ObserverPanel(QWidget):
     observer_set = Signal(float, float)  # lat, lon
     filters_changed = Signal(bool, bool)  # air, sea
     vessel_class_filter_changed = Signal(bool, bool)  # class A, class B
+    altitude_changed = Signal(float)  # meters
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -55,11 +56,19 @@ class ObserverPanel(QWidget):
         self.lon_spin.setValue(DEFAULT_OBSERVER_LON)
         self.lat_spin.installEventFilter(self)
         self.lon_spin.installEventFilter(self)
+        self.altitude_spin = QDoubleSpinBox()
+        self.altitude_spin.setRange(0.0, 9000.0)
+        self.altitude_spin.setDecimals(0)
+        self.altitude_spin.setSuffix(" m")
+        self.altitude_spin.setPrefix("Alt ")
+        self.altitude_spin.setToolTip("Observer height above surface — used for True Visibility Mode")
+        self.altitude_spin.valueChanged.connect(self.altitude_changed)
         set_btn = QPushButton("Set")
         set_btn.setProperty("role", "primary")
         set_btn.clicked.connect(self._on_set_clicked)
         coord_row.addWidget(self.lat_spin)
         coord_row.addWidget(self.lon_spin)
+        coord_row.addWidget(self.altitude_spin)
         coord_row.addWidget(set_btn)
         layout.addLayout(coord_row)
 

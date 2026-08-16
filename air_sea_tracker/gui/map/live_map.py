@@ -67,6 +67,15 @@ class LiveMap(QWebEngineView):
         payload = json.dumps(target_id)
         self._run_js(f"window.highlightMarker && window.highlightMarker({payload});")
 
+    def zoom_in(self) -> None:
+        self._run_js("window.zoomIn && window.zoomIn();")
+
+    def zoom_out(self) -> None:
+        self._run_js("window.zoomOut && window.zoomOut();")
+
+    def toggle_dark_layer(self) -> None:
+        self._run_js("window.toggleDarkLayer && window.toggleDarkLayer();")
+
     def draw_track(self, points: list[tuple[float, float]]) -> None:
         payload = json.dumps(points)
         self._run_js(f"window.drawTrack && window.drawTrack({payload});")

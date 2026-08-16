@@ -21,16 +21,16 @@ class TargetDrawer(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("DetailDrawer")
-        self.setFixedWidth(360)
+        self.setFixedWidth(420)
         self._target_id: str | None = None
 
         layout = QVBoxLayout(self)
 
         header = QHBoxLayout()
         self.name_label = QLabel("—")
-        self.name_label.setStyleSheet("font-size: 18px; font-weight: 600;")
-        header.addWidget(self.name_label)
-        header.addStretch()
+        self.name_label.setStyleSheet("font-size: 16px; font-weight: 600;")
+        self.name_label.setWordWrap(True)
+        header.addWidget(self.name_label, stretch=1)
         close_btn = QPushButton("×")
         close_btn.clicked.connect(self.closed)
         header.addWidget(close_btn)
@@ -38,12 +38,13 @@ class TargetDrawer(QWidget):
 
         self.subtitle_label = QLabel("")
         self.subtitle_label.setProperty("role", "secondary")
+        self.subtitle_label.setWordWrap(True)
         layout.addWidget(self.subtitle_label)
 
         self.status_badge = StatusBadge("offline")
         layout.addWidget(self.status_badge)
 
-        self.telemetry = TelemetryWidget(["Speed", "Course", "Distance"])
+        self.telemetry = TelemetryWidget(["Speed", "Course", "Distance", "Visibility"])
         layout.addWidget(self.telemetry)
 
         # Identity + technical characteristics (SDR §15) — rebuilt per
@@ -51,6 +52,8 @@ class TargetDrawer(QWidget):
         layout.addWidget(QLabel("DETAILS"))
         self._details_form = QFormLayout()
         self._details_form.setContentsMargins(0, 0, 0, 8)
+        self._details_form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        self._details_form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.DontWrapRows)
         layout.addLayout(self._details_form)
 
         actions = QHBoxLayout()
@@ -75,4 +78,6 @@ class TargetDrawer(QWidget):
         while self._details_form.rowCount():
             self._details_form.removeRow(0)
         for label, value in fields:
-            self._details_form.addRow(label, QLabel(value))
+            value_label = QLabel(value)
+            value_label.setWordWrap(True)
+            self._details_form.addRow(label, value_label)

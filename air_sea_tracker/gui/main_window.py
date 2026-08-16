@@ -57,13 +57,15 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         self._page_index: dict[str, int] = {}
         self._register_page("global", GlobalPage(target_manager))
-        self.nearby_page = NearbyPage(target_manager)
+        self.nearby_page = NearbyPage(target_manager, settings)
         self.nearby_page.observer_changed.connect(self._on_observer_changed)
         self._register_page("nearby", self.nearby_page)
         self._register_page("ports", PortsPage(target_manager))
         self._register_page("airports", AirportsPage(target_manager))
         self._register_page("history", HistoryPage(target_manager))
-        self._register_page("search", SearchPage())
+        self.search_page = SearchPage(target_manager)
+        self.search_page.target_activated.connect(self._on_search_target_activated)
+        self._register_page("search", self.search_page)
         self.settings_page = SettingsPage(settings, theme_manager)
         self.settings_page.ais_credential_changed.connect(self.ais_credential_changed)
         self._register_page("settings", self.settings_page)
@@ -89,6 +91,10 @@ class MainWindow(QMainWindow):
         self._settings.radius_km = self.nearby_page.observer_panel.radius_km
         self.top_bar.set_observer_location(f"{lat:.4f}, {lon:.4f}")
         self.observer_changed.emit(lat, lon)
+
+    def _on_search_target_activated(self, target_id: str) -> None:
+        self._select_mode("nearby")
+        self.nearby_page.select_target(target_id)
 
     def _register_page(self, mode: str, widget: QWidget) -> None:
         self._page_index[mode] = self.pages.addWidget(widget)
