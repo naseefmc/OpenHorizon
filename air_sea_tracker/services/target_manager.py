@@ -9,6 +9,7 @@ arrive on the asyncio loop.
 from __future__ import annotations
 
 import sqlite3
+import time
 from dataclasses import replace
 from datetime import datetime, timezone
 
@@ -17,7 +18,16 @@ from models.aircraft import Aircraft
 from models.vessel import Vessel
 from services.cache_service import AIRCRAFT_TTL_SECONDS, VESSEL_TTL_SECONDS, LiveTargetCache
 from services.geo_service import distance_and_bearing
+from utils.distance import haversine_km
 from utils.units import ms_to_kt, speed_label
+
+# SDR §26.5: skip a history point unless position/speed/heading changed
+# meaningfully or enough time passed — avoids a history row per packet
+# for a target that's barely moving.
+HISTORY_MIN_INTERVAL_SECONDS = 60.0
+HISTORY_MIN_DISTANCE_KM = 0.1
+HISTORY_MIN_HEADING_DELTA = 10.0
+HISTORY_MIN_SPEED_DELTA = 2.0
 
 
 class TargetManager:
@@ -30,9 +40,20 @@ class TargetManager:
         self.sea_enabled: bool = True
         self.class_a_enabled: bool = True
         self.class_b_enabled: bool = True
+        self._last_history: dict[str, tuple[float, float, float | None, float | None, float]] = {}
         self._db_conn = db_conn
         if db_conn is not None:
             self._load_persisted(db_conn)
+
+    @property
+    def db_conn(self) -> sqlite3.Connection | None:
+        return self._db_conn
+
+    def all_vessels(self) -> list[Vessel]:
+        return [t for t in self.cache.values() if isinstance(t, Vessel)]
+
+    def all_aircraft(self) -> list[Aircraft]:
+        return [t for t in self.cache.values() if isinstance(t, Aircraft)]
 
     def _load_persisted(self, db_conn: sqlite3.Connection) -> None:
         """Restore last-known positions from disk on startup (SDR §26.6,
@@ -71,6 +92,24 @@ class TargetManager:
                 repository.save_vessel(self._db_conn, target)
         self._db_conn.commit()
 
+    def purge_old_history(self, retention_days: int) -> int:
+        """SDR §8: default 7-day retention, configurable 1/3/7/30/unlimited."""
+        if self._db_conn is None:
+            return 0
+        removed = repository.purge_history_older_than(self._db_conn, retention_days)
+        self._db_conn.commit()
+        return removed
+
+    def track(self, target_id: str, since: datetime | None = None) -> list[dict]:
+        if self._db_conn is None:
+            return []
+        return repository.load_track(self._db_conn, target_id, since)
+
+    def known_targets(self) -> list[dict]:
+        if self._db_conn is None:
+            return []
+        return repository.list_known_targets(self._db_conn)
+
     # --- observer/filter state (driven by ObserverPanel) ---
 
     def set_observer(self, lat: float, lon: float) -> None:
@@ -93,16 +132,56 @@ class TargetManager:
     def update_aircraft(self, aircraft: Aircraft) -> None:
         aircraft.last_update = datetime.now(timezone.utc)
         self.cache.put(f"aircraft:{aircraft.icao24}", aircraft, AIRCRAFT_TTL_SECONDS)
+        self._maybe_record_history(
+            aircraft.target_id, "aircraft", aircraft.latitude, aircraft.longitude,
+            aircraft.altitude_m, aircraft.ground_speed, aircraft.track, None, aircraft.source,
+        )
 
     def update_vessel(self, vessel: Vessel) -> None:
         vessel.last_update = datetime.now(timezone.utc)
         key = f"vessel:{vessel.target_id}"
         existing = self.cache.get(key)
         if isinstance(existing, Vessel):
-            # Merge so a PositionReport doesn't wipe fields only ShipStaticData carries.
-            updates = {k: v for k, v in vessel.__dict__.items() if v not in (None, "", 0.0)}
+            # Merge so a PositionReport doesn't wipe fields only ShipStaticData
+            # carries. Excludes None/"" only — NOT 0.0, which is a legitimate
+            # value for course/heading (due north) and speed (stopped); with
+            # providers now using None (not 0.0) as their own missing-data
+            # sentinel, a real 0.0 here is trustworthy and must not be dropped.
+            updates = {k: v for k, v in vessel.__dict__.items() if v not in (None, "")}
             vessel = replace(existing, **updates)
         self.cache.put(key, vessel, VESSEL_TTL_SECONDS)
+        heading = vessel.effective_heading
+        self._maybe_record_history(
+            vessel.target_id, "vessel", vessel.latitude, vessel.longitude,
+            None, vessel.speed_over_ground, heading, vessel.destination, vessel.source,
+        )
+
+    def _maybe_record_history(
+        self, target_id: str, target_type: str, lat: float, lon: float,
+        altitude_m: float | None, speed: float | None, heading: float | None,
+        destination: str | None, source: str | None,
+    ) -> None:
+        if self._db_conn is None:
+            return
+        now = time.monotonic()
+        prev = self._last_history.get(target_id)
+        if prev is not None:
+            prev_lat, prev_lon, prev_speed, prev_heading, prev_time = prev
+            distance_km = haversine_km(prev_lat, prev_lon, lat, lon)
+            speed_delta = abs((speed or 0) - (prev_speed or 0))
+            heading_delta = abs((heading or 0) - (prev_heading or 0)) if heading is not None and prev_heading is not None else 0
+            elapsed = now - prev_time
+            if (
+                elapsed < HISTORY_MIN_INTERVAL_SECONDS
+                and distance_km < HISTORY_MIN_DISTANCE_KM
+                and speed_delta < HISTORY_MIN_SPEED_DELTA
+                and heading_delta < HISTORY_MIN_HEADING_DELTA
+            ):
+                return
+        self._last_history[target_id] = (lat, lon, speed, heading, now)
+        repository.insert_history_point(
+            self._db_conn, target_id, target_type, lat, lon, altitude_m, speed, heading, destination, source
+        )
 
     def ingest_opensky_states(self, payload: dict) -> None:
         """Parses OpenSky /states/all response (SDR §6)."""
@@ -130,6 +209,18 @@ class TargetManager:
             self.update_aircraft(aircraft)
 
     # --- query for GUI ---
+
+    def all_targets(self, air_enabled: bool = True, sea_enabled: bool = True) -> list[Aircraft | Vessel]:
+        """Unfiltered-by-observer set for Global Mode (SDR §7)."""
+        results = []
+        for target in self.cache.values():
+            is_aircraft = isinstance(target, Aircraft)
+            if is_aircraft and not air_enabled:
+                continue
+            if not is_aircraft and not sea_enabled:
+                continue
+            results.append(target)
+        return results
 
     def nearby(self) -> list[tuple[Aircraft | Vessel, float, float]]:
         """Returns (target, distance_km, bearing_deg) within radius, nearest first."""

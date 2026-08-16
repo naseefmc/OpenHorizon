@@ -76,6 +76,7 @@ class NearbyPage(QWidget):
         # --- target detail drawer (SDR §15, GUI §10) ---
         self.drawer = TargetDrawer()
         self.drawer.closed.connect(self._on_drawer_closed)
+        self.drawer.track_requested.connect(self._on_track_requested)
         self.drawer.hide()
         root.addWidget(self.drawer)
 
@@ -138,17 +139,58 @@ class NearbyPage(QWidget):
                 subtitle = f"{'Aircraft' if is_aircraft else 'Vessel'} • {distance_km:.1f} km away"
                 self.drawer.show_target(target_id, name, subtitle)
                 speed = target.ground_speed if is_aircraft else target.speed_over_ground
-                heading = target.track if is_aircraft else (target.course_over_ground or target.heading)
+                heading = target.track if is_aircraft else target.effective_heading
                 self.drawer.telemetry.set_value("Speed", speed_label(speed))
                 self.drawer.telemetry.set_value("Course", f"{heading:.0f}°" if heading is not None else "—")
                 self.drawer.telemetry.set_value("Distance", f"{distance_km:.1f} km")
                 self.drawer.status_badge.set_state("live")
+                self.drawer.set_details(self._target_details(target, is_aircraft))
                 self.drawer.show()
                 break
+
+    @staticmethod
+    def _target_details(target, is_aircraft: bool) -> list[tuple[str, str]]:
+        def field(label: str, value) -> tuple[str, str] | None:
+            return (label, str(value)) if value not in (None, "") else None
+
+        if is_aircraft:
+            rows = [
+                field("ICAO24", target.icao24),
+                field("Registration", target.registration),
+                field("Callsign", target.callsign),
+                field("Type", target.aircraft_type),
+                field("Origin country", target.origin_country),
+                field("Squawk", target.squawk),
+                field("Source", target.source),
+            ]
+        else:
+            rows = [
+                field("MMSI", target.mmsi),
+                field("IMO", target.imo),
+                field("Callsign", target.callsign),
+                field("Class", target.ais_class),
+                field("Ship type", target.ship_type),
+                field("Flag", target.flag),
+                field("Length", f"{target.length_m:.0f} m" if target.length_m else None),
+                field("Width", f"{target.width_m:.0f} m" if target.width_m else None),
+                field("Draught", f"{target.draught_m:.1f} m" if target.draught_m else None),
+                field("Destination", target.destination),
+                field("Nav status", target.navigation_status),
+                field("Source", target.source),
+            ]
+        return [r for r in rows if r is not None]
+
+    def _on_track_requested(self, target_id: str) -> None:
+        if self.drawer.track_btn.isChecked():
+            points = [(p["lat"], p["lon"]) for p in self._target_manager.track(target_id)]
+            self.live_map.draw_track(points)
+        else:
+            self.live_map.clear_track()
 
     def _on_drawer_closed(self) -> None:
         self._selected_id = None
         self.live_map.highlight_marker(None)
+        self.live_map.clear_track()
         self.drawer.hide()
 
     # --- periodic refresh (SDR §24) ---
@@ -160,7 +202,7 @@ class NearbyPage(QWidget):
         markers = []
         for target, _distance_km, _bearing in self._target_manager.nearby():
             is_aircraft = isinstance(target, Aircraft)
-            heading = target.track if is_aircraft else (target.course_over_ground or target.heading)
+            heading = target.track if is_aircraft else target.effective_heading
             label = (target.callsign or target.icao24) if is_aircraft else (target.name or target.mmsi)
             markers.append({
                 "id": target.target_id,

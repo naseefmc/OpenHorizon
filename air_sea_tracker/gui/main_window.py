@@ -56,13 +56,13 @@ class MainWindow(QMainWindow):
 
         self.pages = QStackedWidget()
         self._page_index: dict[str, int] = {}
-        self._register_page("global", GlobalPage())
+        self._register_page("global", GlobalPage(target_manager))
         self.nearby_page = NearbyPage(target_manager)
         self.nearby_page.observer_changed.connect(self._on_observer_changed)
         self._register_page("nearby", self.nearby_page)
-        self._register_page("ports", PortsPage())
-        self._register_page("airports", AirportsPage())
-        self._register_page("history", HistoryPage())
+        self._register_page("ports", PortsPage(target_manager))
+        self._register_page("airports", AirportsPage(target_manager))
+        self._register_page("history", HistoryPage(target_manager))
         self._register_page("search", SearchPage())
         self.settings_page = SettingsPage(settings, theme_manager)
         self.settings_page.ais_credential_changed.connect(self.ais_credential_changed)

@@ -142,6 +142,16 @@ def main() -> int:
     flush_timer.start()
     window.closing.connect(target_manager.flush_to_db)
 
+    # SDR §8: purge history past the configured retention window.
+    def purge_history() -> None:
+        target_manager.purge_old_history(settings.history_retention_days)
+
+    purge_timer = QTimer()
+    purge_timer.setInterval(3_600_000)  # hourly is plenty for a retention sweep
+    purge_timer.timeout.connect(purge_history)
+    purge_timer.start()
+    purge_history()  # also run once at startup
+
     source_states = {"ais": "disabled", "adsb": "disabled"}
 
     def on_status_change(source: str, state: str) -> None:

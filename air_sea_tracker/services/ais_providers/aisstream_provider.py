@@ -60,14 +60,23 @@ class AISStreamProvider(AISProvider):
         if mmsi is None:
             return None
 
+        # Explicit None checks, not `or 0.0` — 0.0 is a real, valid
+        # latitude/longitude (equator/prime meridian); using it as a
+        # missing-data sentinel would be indistinguishable from a genuine
+        # position there, and downstream merge logic relies on knowing
+        # a field was truly absent rather than legitimately zero.
+        lat, lon = meta.get("latitude"), meta.get("longitude")
+        if lat is None or lon is None:
+            return None
+
         message_type = payload.get("MessageType")
         body = (payload.get("Message") or {}).get(message_type) or {}
 
         vessel = Vessel(
             mmsi=str(mmsi),
             name=(meta.get("ShipName") or "").strip() or None,
-            latitude=meta.get("latitude") or 0.0,
-            longitude=meta.get("longitude") or 0.0,
+            latitude=lat,
+            longitude=lon,
             source="aisstream",
         )
 

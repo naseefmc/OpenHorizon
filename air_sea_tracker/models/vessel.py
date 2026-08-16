@@ -33,3 +33,12 @@ class Vessel:
     def target_id(self) -> str:
         # IMO is the stable identifier where known (SDR §21); MMSI as fallback.
         return f"imo:{self.imo}" if self.imo else f"mmsi:{self.mmsi}"
+
+    @property
+    def effective_heading(self) -> float | None:
+        """Course-over-ground is generally more reliable than compass heading
+        when both are available; fall back to heading only when COG is truly
+        unknown. Must be an explicit None check — `course_over_ground or
+        heading` silently breaks for any vessel heading due north (0.0°,
+        a perfectly valid course), since 0.0 is falsy in Python."""
+        return self.course_over_ground if self.course_over_ground is not None else self.heading

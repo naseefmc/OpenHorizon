@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="initial-scale=1.0">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 <style>
   html, body, #map { height: 100%; margin: 0; padding: 0; background: #0B1120; }
   .target-icon {
@@ -22,6 +24,7 @@
 <body>
 <div id="map"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <script>
   const map = L.map('map', { zoomControl: false }).setView([20, 0], 3);
@@ -35,6 +38,12 @@
   const markers = {};   // target_id -> L.marker
   let selectedId = null;
   let bridge = null;
+  let trackLine = null;
+
+  // SDR §7/§24: Global Mode clusters at wide zoom and progressively
+  // separates on zoom-in; harmless (auto-degrades to single markers) for
+  // Nearby Mode's much smaller target count, so always routed through it.
+  const clusterGroup = L.markerClusterGroup({ maxClusterRadius: 60, disableClusteringAtZoom: 12 }).addTo(map);
 
   function arrowIcon(category, heading, selected) {
     const cls = 'target-icon ' + category + (selected ? ' selected' : '');
@@ -76,16 +85,17 @@
       markers[id].setIcon(icon);
       markers[id].bindTooltip(label);
     } else {
-      const m = L.marker([lat, lon], { icon }).addTo(map);
+      const m = L.marker([lat, lon], { icon });
       m.bindTooltip(label, { direction: 'top' });
       m.on('click', () => { if (bridge) bridge.on_marker_clicked(id); });
       markers[id] = m;
+      clusterGroup.addLayer(m);
     }
   }
 
   function removeMarker(id) {
     if (markers[id]) {
-      map.removeLayer(markers[id]);
+      clusterGroup.removeLayer(markers[id]);
       delete markers[id];
     }
   }
@@ -99,6 +109,18 @@
     for (const id of Object.keys(markers)) {
       if (!seen.has(id)) removeMarker(id);
     }
+  }
+
+  function drawTrack(points) {
+    // points: [[lat, lon], ...] oldest first (SDR §8, §16 "historical track lines")
+    if (trackLine) { map.removeLayer(trackLine); trackLine = null; }
+    if (!points || points.length < 2) return;
+    trackLine = L.polyline(points, { color: '#FBBF24', weight: 2, opacity: 0.8 }).addTo(map);
+    map.fitBounds(trackLine.getBounds(), { padding: [40, 40] });
+  }
+
+  function clearTrack() {
+    if (trackLine) { map.removeLayer(trackLine); trackLine = null; }
   }
 
   function highlightMarker(id) {
@@ -115,6 +137,8 @@
   window.setRadiusKm = setRadiusKm;
   window.syncMarkers = syncMarkers;
   window.highlightMarker = highlightMarker;
+  window.drawTrack = drawTrack;
+  window.clearTrack = clearTrack;
 
   if (window.qt && window.qt.webChannelTransport) {
     new QWebChannel(qt.webChannelTransport, function(channel) {

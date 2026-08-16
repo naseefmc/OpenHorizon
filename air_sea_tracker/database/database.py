@@ -136,6 +136,10 @@ def connect(db_path: Path | None = None) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     _apply_column_migrations(conn)
     conn.commit()
+
+    from database.seed import seed_if_empty
+
+    seed_if_empty(conn)
     return conn
 
 

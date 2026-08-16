@@ -3,6 +3,11 @@
 Poll-based and quota-limited (400 credits/day on the anonymous free
 tier). Uses a RateLimiter to track quota and back off rather than
 polling on a fixed short interval regardless of remaining credits.
+
+OpenSky's anonymous tier also enforces its own server-side per-IP
+throttle, separate from and much stricter than the simple 400/day
+budget — a 429 there can carry an hours-long Retry-After, so on a 429
+this reads and respects the actual header instead of a flat guess.
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 OPENSKY_STATES_URL = "https://opensky-network.org/api/states/all"
 DEFAULT_POLL_INTERVAL_SECONDS = 30  # realistic for free tier; see SDR §6-§7
+FALLBACK_BACKOFF_SECONDS = 60  # used only if the 429 response has no retry-after header
 
 
 class ADSBCollector:
@@ -39,7 +45,15 @@ class ADSBCollector:
     async def run(self) -> None:
         async with aiohttp.ClientSession() as session:
             while not self._stop.is_set():
-                if self._rate_limiter.can_call():
+                backoff_remaining = self._rate_limiter.backoff_seconds_remaining()
+                if backoff_remaining > 0:
+                    logger.info(
+                        "OpenSky server-side rate limit active; %.0fs remaining (persists across restarts)",
+                        backoff_remaining,
+                    )
+                elif not self._rate_limiter.can_call():
+                    logger.info("OpenSky daily budget exhausted: %s", self._rate_limiter.quota_summary())
+                else:
                     try:
                         params = {}
                         if self._bbox:
@@ -50,7 +64,9 @@ class ADSBCollector:
                         ) as resp:
                             self._rate_limiter.record_call()
                             if resp.status == 429:
-                                self._rate_limiter.apply_backoff(60)
+                                retry_after = self._parse_retry_after(resp.headers)
+                                self._rate_limiter.apply_backoff(retry_after)
+                                logger.warning("OpenSky rate-limited us (429); backing off %.0fs", retry_after)
                             elif resp.status == 200:
                                 data = await resp.json()
                                 self._on_state_update(data)
@@ -58,10 +74,19 @@ class ADSBCollector:
                                 logger.warning("OpenSky returned status %s", resp.status)
                     except Exception:
                         logger.exception("OpenSky poll failed")
-                else:
-                    logger.info("OpenSky quota exhausted: %s", self._rate_limiter.quota_summary())
 
                 await asyncio.sleep(self._poll_interval)
+
+    @staticmethod
+    def _parse_retry_after(headers) -> float:
+        for key in ("X-Rate-Limit-Retry-After-Seconds", "Retry-After"):
+            value = headers.get(key)
+            if value is not None:
+                try:
+                    return float(value)
+                except ValueError:
+                    pass
+        return FALLBACK_BACKOFF_SECONDS
 
     def quota_summary(self) -> str:
         return self._rate_limiter.quota_summary()

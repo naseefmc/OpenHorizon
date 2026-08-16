@@ -7,7 +7,7 @@ history controls, research entry point. Never opens a separate window.
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from gui.widgets.status_badge import StatusBadge
 from gui.widgets.telemetry_widget import TelemetryWidget
@@ -46,12 +46,20 @@ class TargetDrawer(QWidget):
         self.telemetry = TelemetryWidget(["Speed", "Course", "Distance"])
         layout.addWidget(self.telemetry)
 
+        # Identity + technical characteristics (SDR §15) — rebuilt per
+        # selection since the field set differs between vessels/aircraft.
+        layout.addWidget(QLabel("DETAILS"))
+        self._details_form = QFormLayout()
+        self._details_form.setContentsMargins(0, 0, 0, 8)
+        layout.addLayout(self._details_form)
+
         actions = QHBoxLayout()
-        track_btn = QPushButton("Track History")
-        track_btn.clicked.connect(lambda: self._target_id and self.track_requested.emit(self._target_id))
+        self.track_btn = QPushButton("Track History")
+        self.track_btn.setCheckable(True)
+        self.track_btn.clicked.connect(lambda: self._target_id and self.track_requested.emit(self._target_id))
         research_btn = QPushButton("Research")
         research_btn.clicked.connect(lambda: self._target_id and self.research_requested.emit(self._target_id))
-        actions.addWidget(track_btn)
+        actions.addWidget(self.track_btn)
         actions.addWidget(research_btn)
         layout.addLayout(actions)
 
@@ -61,3 +69,10 @@ class TargetDrawer(QWidget):
         self._target_id = target_id
         self.name_label.setText(name)
         self.subtitle_label.setText(subtitle)
+        self.track_btn.setChecked(False)
+
+    def set_details(self, fields: list[tuple[str, str]]) -> None:
+        while self._details_form.rowCount():
+            self._details_form.removeRow(0)
+        for label, value in fields:
+            self._details_form.addRow(label, QLabel(value))

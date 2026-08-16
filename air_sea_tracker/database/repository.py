@@ -16,7 +16,7 @@ rather than firing on every single position update.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from models.aircraft import Aircraft
 from models.vessel import Vessel
@@ -40,7 +40,7 @@ def save_vessel(conn: sqlite3.Connection, vessel: Vessel) -> None:
                updated_at=excluded.updated_at""",
         (
             vessel.target_id, vessel.latitude, vessel.longitude,
-            vessel.speed_over_ground, vessel.course_over_ground or vessel.heading,
+            vessel.speed_over_ground, vessel.effective_heading,
             vessel.destination, vessel.source, updated_at,
         ),
     )
@@ -164,3 +164,103 @@ def _parse_ts(value: str | None) -> datetime | None:
         return datetime.fromisoformat(value)
     except ValueError:
         return None
+
+
+# --- position_history (SDR §8: track history, §26.5: duplicate filtering) ---
+
+def insert_history_point(
+    conn: sqlite3.Connection,
+    target_id: str,
+    target_type: str,
+    latitude: float,
+    longitude: float,
+    altitude_m: float | None,
+    speed: float | None,
+    heading: float | None,
+    destination: str | None,
+    source: str | None,
+) -> None:
+    conn.execute(
+        "INSERT INTO targets (target_id, target_type) VALUES (?, ?) ON CONFLICT(target_id) DO NOTHING",
+        (target_id, target_type),
+    )
+    conn.execute(
+        """INSERT INTO position_history
+               (target_id, target_type, timestamp, latitude, longitude, altitude_m, speed, heading, destination, source)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            target_id, target_type, datetime.now(timezone.utc).isoformat(),
+            latitude, longitude, altitude_m, speed, heading, destination, source,
+        ),
+    )
+
+
+def purge_history_older_than(conn: sqlite3.Connection, retention_days: int) -> int:
+    """Default retention 7 days, configurable 1/3/7/30/unlimited (SDR §8).
+    Unlimited retention is represented by retention_days <= 0 — skip purging."""
+    if retention_days <= 0:
+        return 0
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    cur = conn.execute("DELETE FROM position_history WHERE timestamp < ?", (cutoff,))
+    return cur.rowcount
+
+
+def list_known_targets(conn: sqlite3.Connection) -> list[dict]:
+    """Distinct targets with history, for the History Mode picker (SDR §8)."""
+    rows = conn.execute(
+        """SELECT DISTINCT t.target_id, t.target_type,
+                  COALESCE(v.name, v.mmsi, a.registration, a.callsign, t.target_id) AS name
+           FROM targets t
+           LEFT JOIN vessels v ON v.target_id = t.target_id
+           LEFT JOIN aircraft a ON a.icao24 = t.target_id
+           WHERE EXISTS (SELECT 1 FROM position_history h WHERE h.target_id = t.target_id)
+           ORDER BY name"""
+    ).fetchall()
+    return [{"target_id": r["target_id"], "target_type": r["target_type"], "name": r["name"]} for r in rows]
+
+
+def load_track(conn: sqlite3.Connection, target_id: str, since: datetime | None = None) -> list[dict]:
+    """Returns [{lat, lon, timestamp, speed, heading, altitude_m}, ...] oldest first."""
+    if since is not None:
+        rows = conn.execute(
+            "SELECT * FROM position_history WHERE target_id = ? AND timestamp >= ? ORDER BY timestamp",
+            (target_id, since.isoformat()),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM position_history WHERE target_id = ? ORDER BY timestamp", (target_id,)
+        ).fetchall()
+    return [
+        {
+            "lat": r["latitude"], "lon": r["longitude"], "timestamp": r["timestamp"],
+            "speed": r["speed"], "heading": r["heading"], "altitude_m": r["altitude_m"],
+        }
+        for r in rows
+    ]
+
+
+def track_stats(points: list[dict]) -> dict:
+    """Distance travelled, max/avg speed, time stationary (SDR §8)."""
+    from utils.distance import haversine_km
+
+    if not points:
+        return {"distance_km": 0.0, "max_speed": None, "avg_speed": None, "stationary_seconds": 0}
+
+    distance_km = 0.0
+    for a, b in zip(points, points[1:]):
+        distance_km += haversine_km(a["lat"], a["lon"], b["lat"], b["lon"])
+
+    speeds = [p["speed"] for p in points if p["speed"] is not None]
+    stationary_seconds = 0
+    for a, b in zip(points, points[1:]):
+        if (a["speed"] or 0) < 0.5:  # ~stopped, in knots
+            ta, tb = _parse_ts(a["timestamp"]), _parse_ts(b["timestamp"])
+            if ta and tb:
+                stationary_seconds += int((tb - ta).total_seconds())
+
+    return {
+        "distance_km": distance_km,
+        "max_speed": max(speeds) if speeds else None,
+        "avg_speed": (sum(speeds) / len(speeds)) if speeds else None,
+        "stationary_seconds": stationary_seconds,
+    }

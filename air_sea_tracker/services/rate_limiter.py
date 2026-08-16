@@ -25,12 +25,21 @@ class QuotaState:
 
 
 class RateLimiter:
-    """Tracks quota usage for one named source and applies backoff."""
+    """Tracks quota usage for one named source and applies backoff.
+
+    The backoff deadline is persisted (SDR §27) — not just held in memory —
+    because a server-side 429 (e.g. OpenSky's real per-IP throttle, which
+    can hand out an hours-long Retry-After) must survive an app restart.
+    An in-memory-only backoff would let every relaunch immediately retry
+    and get blocked again, which at best does nothing and at worst resets
+    or extends the server's own cooldown timer.
+    """
 
     def __init__(self, name: str, daily_limit: int) -> None:
         self.name = name
         self.state = QuotaState(limit=daily_limit, resets_at=self._next_midnight_utc())
-        self._backoff_until: float = 0.0
+        self._settings = Settings()
+        self._backoff_key = f"backoff/{name}/until"
 
     @staticmethod
     def _next_midnight_utc() -> float:
@@ -42,9 +51,15 @@ class RateLimiter:
             self.state.used = 0
             self.state.resets_at = self._next_midnight_utc()
 
+    def backoff_seconds_remaining(self) -> float:
+        until = self._settings.get(self._backoff_key)
+        if until is None:
+            return 0.0
+        return max(0.0, float(until) - time.time())
+
     def can_call(self, cost: int = 1) -> bool:
         self._maybe_reset()
-        if time.time() < self._backoff_until:
+        if self.backoff_seconds_remaining() > 0:
             return False
         return self.state.remaining >= cost
 
@@ -53,7 +68,7 @@ class RateLimiter:
         self.state.used += cost
 
     def apply_backoff(self, seconds: float) -> None:
-        self._backoff_until = time.time() + seconds
+        self._settings.set(self._backoff_key, time.time() + seconds)
 
     def quota_summary(self) -> str:
         self._maybe_reset()

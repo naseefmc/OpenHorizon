@@ -66,3 +66,10 @@ class LiveMap(QWebEngineView):
     def highlight_marker(self, target_id: str | None) -> None:
         payload = json.dumps(target_id)
         self._run_js(f"window.highlightMarker && window.highlightMarker({payload});")
+
+    def draw_track(self, points: list[tuple[float, float]]) -> None:
+        payload = json.dumps(points)
+        self._run_js(f"window.drawTrack && window.drawTrack({payload});")
+
+    def clear_track(self) -> None:
+        self._run_js("window.clearTrack && window.clearTrack();")
