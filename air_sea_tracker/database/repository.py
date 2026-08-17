@@ -220,7 +220,7 @@ def list_known_targets(conn: sqlite3.Connection) -> list[dict]:
            LEFT JOIN vessels v ON v.target_id = t.target_id
            LEFT JOIN aircraft a ON a.icao24 = t.target_id
            WHERE EXISTS (SELECT 1 FROM position_history h WHERE h.target_id = t.target_id)
-           ORDER BY name"""
+           ORDER BY last_seen DESC"""
     ).fetchall()
     return [
         {"target_id": r["target_id"], "target_type": r["target_type"], "name": r["name"], "last_seen": r["last_seen"]}

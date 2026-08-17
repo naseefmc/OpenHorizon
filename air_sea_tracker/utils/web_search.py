@@ -15,9 +15,16 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 
 
+# "aircraft" is the internal kind value used throughout the app (filters,
+# roles, etc.); "flight" is what actually gets searched for, since it
+# returns more relevant image results than the more generic "aircraft".
+_SEARCH_KEYWORDS = {"aircraft": "flight"}
+
+
 def open_google_image_search(name: str, kind: str | None = None) -> None:
     name = (name or "").strip()
     if not name:
         return
-    query = f"{name} {kind}" if kind else name
+    keyword = _SEARCH_KEYWORDS.get(kind, kind) if kind else None
+    query = f"{name} {keyword}" if keyword else name
     QDesktopServices.openUrl(QUrl(f"https://www.google.com/search?tbm=isch&q={quote_plus(query)}"))
