@@ -18,8 +18,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from config.settings import DEFAULT_OBSERVER_LAT, DEFAULT_OBSERVER_LON
-
 QUICK_RADII_KM = [10, 25, 50, 100, 250, 500]
 
 # Matches "43.5081, 16.4402" (also without a comma, or extra whitespace) —
@@ -48,12 +46,14 @@ class ObserverPanel(QWidget):
         self.lat_spin.setRange(-90.0, 90.0)
         self.lat_spin.setDecimals(4)
         self.lat_spin.setPrefix("Lat ")
-        self.lat_spin.setValue(DEFAULT_OBSERVER_LAT)
         self.lon_spin = QDoubleSpinBox()
         self.lon_spin.setRange(-180.0, 180.0)
         self.lon_spin.setDecimals(4)
         self.lon_spin.setPrefix("Lon ")
-        self.lon_spin.setValue(DEFAULT_OBSERVER_LON)
+        # No default location pre-filled here (SDR §27.4 originally baked a
+        # real coordinate into source) — the fields start at 0,0 and stay
+        # that way until the user enters/pastes coordinates and hits "Set",
+        # or a previously-saved location is restored via set_coordinates().
         self.lat_spin.installEventFilter(self)
         self.lon_spin.installEventFilter(self)
         self.altitude_spin = QDoubleSpinBox()

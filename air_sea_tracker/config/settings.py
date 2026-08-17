@@ -13,10 +13,6 @@ from PySide6.QtCore import QSettings
 ORG_NAME = "AirSeaTracker"
 APP_NAME = "AirSeaLiveTracker"
 
-# Default observer location used until the user sets/saves one (SDR §27.4).
-DEFAULT_OBSERVER_LAT = 0.0
-DEFAULT_OBSERVER_LON = 0.0
-
 
 class Settings:
     def __init__(self) -> None:
@@ -33,12 +29,15 @@ class Settings:
 
     @property
     def observer_lat(self) -> float | None:
-        val = self.get("observer/lat", DEFAULT_OBSERVER_LAT)
+        # No hardcoded fallback (SDR §27.4 originally had one baked into
+        # source, which meant a real coordinate shipped in the repo) — an
+        # unset observer location is None until the user explicitly sets one.
+        val = self.get("observer/lat")
         return float(val) if val is not None else None
 
     @property
     def observer_lon(self) -> float | None:
-        val = self.get("observer/lon", DEFAULT_OBSERVER_LON)
+        val = self.get("observer/lon")
         return float(val) if val is not None else None
 
     def set_observer_location(self, lat: float, lon: float) -> None:
