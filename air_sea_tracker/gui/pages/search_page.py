@@ -12,12 +12,13 @@ estimate) lives in `services/enrichment_service.py` /
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QLabel, QListWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QListWidgetItem, QPushButton, QVBoxLayout, QWidget
 
-from gui.widgets.copyable_list import CopyableListWidget
+from gui.widgets.copyable_list import SEARCH_KIND_ROLE, SEARCH_TEXT_ROLE, CopyableListWidget
 from gui.widgets.search_box import SearchBox
 from models.aircraft import Aircraft
 from services.target_manager import TargetManager
+from utils.web_search import open_google_image_search
 
 
 class SearchPage(QWidget):
@@ -40,6 +41,13 @@ class SearchPage(QWidget):
         self.results_list.itemDoubleClicked.connect(self._on_result_activated)
         layout.addWidget(self.results_list, stretch=1)
 
+        buttons_row = QHBoxLayout()
+        search_btn = QPushButton("Search Google")
+        search_btn.clicked.connect(self._on_search_selected)
+        buttons_row.addWidget(search_btn)
+        buttons_row.addStretch(1)
+        layout.addLayout(buttons_row)
+
         hint = QLabel("Double-click a result to jump to it in Nearby Mode (if currently live).")
         hint.setProperty("role", "secondary")
         layout.addWidget(hint)
@@ -52,27 +60,31 @@ class SearchPage(QWidget):
             return
 
         seen_ids: set[str] = set()
-        results: list[tuple[str, str, str]] = []  # (target_id, label, type)
+        results: list[tuple[str, str, str, str]] = []  # (target_id, name, kind, source)
 
         for target in list(self._target_manager.cache.values()):
             if self._matches(target, query) and target.target_id not in seen_ids:
                 seen_ids.add(target.target_id)
-                results.append((target.target_id, self._label(target), "live"))
+                is_aircraft = isinstance(target, Aircraft)
+                kind = "aircraft" if is_aircraft else "vessel"
+                results.append((target.target_id, self._label(target), kind, "live"))
 
         for row in self._target_manager.known_targets():
             haystack = f"{row['name']} {row['target_id']}".lower()
             if query in haystack and row["target_id"] not in seen_ids:
                 seen_ids.add(row["target_id"])
-                results.append((row["target_id"], f"{row['name']} ({row['target_type']})", "history only"))
+                results.append((row["target_id"], row["name"], row["target_type"], "history only"))
 
         if not results:
             self.status_label.setText(f"No matches for \"{query}\"")
             return
 
         self.status_label.setText(f"{len(results)} match(es) for \"{query}\"")
-        for target_id, label, source in results:
-            item = QListWidgetItem(f"{label} — {source}")
+        for target_id, name, kind, source in results:
+            item = QListWidgetItem(f"{name} ({kind}) — {source}")
             item.setData(Qt.UserRole, target_id)
+            item.setData(SEARCH_TEXT_ROLE, name)
+            item.setData(SEARCH_KIND_ROLE, kind)
             self.results_list.addItem(item)
 
     @staticmethod
@@ -90,6 +102,12 @@ class SearchPage(QWidget):
         if isinstance(target, Aircraft):
             return target.callsign or target.registration or target.icao24
         return target.name or target.mmsi
+
+    def _on_search_selected(self) -> None:
+        current = self.results_list.currentItem()
+        if current is None:
+            return
+        open_google_image_search(current.data(SEARCH_TEXT_ROLE), current.data(SEARCH_KIND_ROLE))
 
     def _on_result_activated(self, item: QListWidgetItem) -> None:
         # Selection/navigation into Nearby Mode's map+table is handled by

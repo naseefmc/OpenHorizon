@@ -18,7 +18,7 @@ from gui.panels.target_drawer import TargetDrawer
 from gui.tables.target_table import TargetTable
 from models.aircraft import Aircraft
 from services import enrichment_service, value_estimator
-from services.geo_service import is_geometrically_visible
+from services.geo_service import distance_and_bearing, is_geometrically_visible
 from services.target_manager import TargetManager
 from utils.time_format import timestamp_with_age
 from utils.units import speed_label
@@ -174,27 +174,47 @@ class NearbyPage(QWidget):
         self._select_target(target_id)
 
     def _select_target(self, target_id: str) -> None:
+        # Looks the target up directly in the cache rather than filtering
+        # through nearby() (which excludes anything outside the current
+        # observer radius / air-sea / vessel-class filters): a target can be
+        # genuinely live and selectable from Search or History while sitting
+        # outside those Nearby-specific filters, and silently doing nothing
+        # here previously left the drawer showing whatever was selected
+        # before (stale, and looked like the wrong target had opened).
         self._selected_id = target_id
         self.live_map.highlight_marker(target_id)
 
-        for target, distance_km, _bearing in self._target_manager.nearby():
-            if target.target_id == target_id:
-                is_aircraft = isinstance(target, Aircraft)
-                name = (target.callsign or target.icao24) if is_aircraft else (target.name or target.mmsi)
-                subtitle = f"{'Aircraft' if is_aircraft else 'Vessel'} • {distance_km:.1f} km away"
-                self.drawer.show_target(target_id, name, subtitle)
-                speed = target.ground_speed if is_aircraft else target.speed_over_ground
-                heading = target.track if is_aircraft else target.effective_heading
-                self.drawer.telemetry.set_value("Speed", speed_label(speed))
-                self.drawer.telemetry.set_value("Course", f"{heading:.0f}°" if heading is not None else "—")
-                self.drawer.telemetry.set_value("Distance", f"{distance_km:.1f} km")
-                target_alt = target.altitude_m if is_aircraft else 0.0
-                visible = is_geometrically_visible(distance_km, self._settings.observer_altitude_m, target_alt)
-                self.drawer.telemetry.set_value("Visibility", "In view" if visible else "Below horizon")
-                self.drawer.status_badge.set_state("live")
-                self.drawer.set_details(self._target_details(target, is_aircraft))
-                self.drawer.show()
-                break
+        target = self._target_manager.get_target(target_id)
+        if target is None:
+            self.drawer.hide()
+            return
+
+        is_aircraft = isinstance(target, Aircraft)
+        name = (target.callsign or target.icao24) if is_aircraft else (target.name or target.mmsi)
+
+        distance_km = None
+        observer_lat, observer_lon = self._target_manager.observer_lat, self._target_manager.observer_lon
+        if observer_lat is not None and observer_lon is not None:
+            distance_km, _bearing = distance_and_bearing(observer_lat, observer_lon, target.latitude, target.longitude)
+
+        in_range = distance_km is not None and distance_km <= self._target_manager.radius_km
+        distance_text = f"{distance_km:.1f} km away" if distance_km is not None else "distance unknown"
+        outside_note = "" if in_range else " • outside current Nearby radius/filters"
+        subtitle = f"{'Aircraft' if is_aircraft else 'Vessel'} • {distance_text}{outside_note}"
+        self.drawer.show_target(target_id, name, subtitle, "aircraft" if is_aircraft else "vessel")
+        speed = target.ground_speed if is_aircraft else target.speed_over_ground
+        heading = target.track if is_aircraft else target.effective_heading
+        self.drawer.telemetry.set_value("Speed", speed_label(speed))
+        self.drawer.telemetry.set_value("Course", f"{heading:.0f}°" if heading is not None else "—")
+        self.drawer.telemetry.set_value("Distance", distance_text)
+        target_alt = target.altitude_m if is_aircraft else 0.0
+        visible = distance_km is not None and is_geometrically_visible(
+            distance_km, self._settings.observer_altitude_m, target_alt
+        )
+        self.drawer.telemetry.set_value("Visibility", "In view" if visible else "Below horizon")
+        self.drawer.status_badge.set_state("live")
+        self.drawer.set_details(self._target_details(target, is_aircraft))
+        self.drawer.show()
 
     @staticmethod
     def _target_details(target, is_aircraft: bool) -> list[tuple[str, str]]:

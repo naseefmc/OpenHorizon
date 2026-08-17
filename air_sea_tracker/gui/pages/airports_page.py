@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QListWidgetItem, QSpinBox, QVBoxLayout, QWidget,
 )
 
-from gui.widgets.copyable_list import CopyableListWidget
+from gui.widgets.copyable_list import SEARCH_KIND_ROLE, SEARCH_TEXT_ROLE, CopyableListWidget
 from services import airport_service, geofence_service
 from services.target_manager import TargetManager
 
@@ -114,11 +114,16 @@ class AirportsPage(QWidget):
             return
 
         aircraft_list = self._target_manager.all_aircraft()
-        self.detail_label.setText(f"{airport.name} · {len(aircraft_list)} aircraft currently live")
         groups = geofence_service.airport_traffic(airport, aircraft_list)
+        nearby_count = sum(len(a) for a in groups.values())
+        self.detail_label.setText(f"{airport.name} · {nearby_count} aircraft near this airport")
         for status, group in groups.items():
             lst = self.status_lists[status]
             for a in group:
-                lst.addItem(a.callsign or a.registration or a.icao24)
+                name = a.callsign or a.registration or a.icao24
+                item = QListWidgetItem(name)
+                item.setData(SEARCH_TEXT_ROLE, name)
+                item.setData(SEARCH_KIND_ROLE, "aircraft")
+                lst.addItem(item)
             if not group:
                 lst.addItem("—")

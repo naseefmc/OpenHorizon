@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 
 import aiohttp
 
@@ -24,6 +25,7 @@ from services.rate_limiter import MonthlyRateLimiter, PersistentPollGate
 logger = logging.getLogger(__name__)
 
 RADIUS_URL = "https://api.vesselapi.com/v1/location/vessels/radius"
+INBOUND_URL_TEMPLATE = "https://api.vesselapi.com/v1/port/{unlocode}/inbound"
 POLL_INTERVAL_SECONDS = 1800  # 30 min — see module docstring re: 150 calls/month budget
 MONTHLY_CALL_LIMIT = 150
 MAX_RADIUS_M = 100_000  # API-enforced ceiling
@@ -134,3 +136,52 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     from utils.distance import haversine_km
 
     return haversine_km(lat1, lon1, lat2, lon2)
+
+
+class VesselApiError(Exception):
+    pass
+
+
+@dataclass
+class InboundVessel:
+    mmsi: str
+    name: str | None
+    destination: str | None
+    eta: str | None  # RFC3339, as returned — display formatting is the GUI's job
+    draught: float | None
+
+
+async def fetch_inbound(unlocode: str, api_key: str, timeout_seconds: float = 40.0) -> list[InboundVessel]:
+    """GET /v1/port/{unlocode}/inbound — vessels with a declared AIS
+    destination matching this port, sorted by ETA. Confirmed live: takes
+    20-30s to respond (much slower than the radius endpoint), so callers
+    must not run this on the GUI thread or on a short polling timer.
+
+    Complementary to RADIUS_URL, not a replacement: radius returns nearby
+    *position reports* regardless of declared destination; this returns
+    *declared-destination* vessels regardless of current distance from the
+    port. Neither alone is "current port traffic."
+    """
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            INBOUND_URL_TEMPLATE.format(unlocode=unlocode),
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+        ) as resp:
+            if resp.status != 200:
+                raise VesselApiError(f"VesselAPI inbound lookup failed: HTTP {resp.status}")
+            payload = await resp.json()
+
+    results = []
+    for row in payload.get("vesselETAs") or []:
+        mmsi = row.get("mmsi")
+        if mmsi is None:
+            continue
+        results.append(InboundVessel(
+            mmsi=str(mmsi),
+            name=(row.get("vessel_name") or "").strip() or None,
+            destination=row.get("destination"),
+            eta=row.get("eta"),
+            draught=row.get("draught"),
+        ))
+    return results

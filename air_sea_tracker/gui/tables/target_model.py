@@ -41,6 +41,19 @@ class TargetTableModel(QAbstractTableModel):
             return self._rows[row].get("target_id")
         return None
 
+    def name_at(self, row: int) -> str | None:
+        if 0 <= row < len(self._rows):
+            return self._rows[row].get("name")
+        return None
+
+    def kind_at(self, row: int) -> str | None:
+        """'aircraft' or 'vessel', derived from the "Type" column (e.g.
+        'Aircraft' or 'Vessel (A)') for use in an image-search query."""
+        if not (0 <= row < len(self._rows)):
+            return None
+        type_str = self._rows[row].get("type", "")
+        return "aircraft" if type_str.startswith("Aircraft") else "vessel"
+
     def replace_rows(self, rows: list[dict[str, Any]]) -> None:
         self.beginResetModel()
         self._rows = rows

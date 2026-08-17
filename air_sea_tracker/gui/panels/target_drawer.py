@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QFormLayout, QHBoxLayout, QLabel, QPushButton, QVB
 
 from gui.widgets.status_badge import StatusBadge
 from gui.widgets.telemetry_widget import TelemetryWidget
+from utils.web_search import open_google_image_search
 
 
 class TargetDrawer(QWidget):
@@ -23,6 +24,7 @@ class TargetDrawer(QWidget):
         self.setObjectName("DetailDrawer")
         self.setFixedWidth(420)
         self._target_id: str | None = None
+        self._kind: str | None = None  # "aircraft" or "vessel", for the search button
 
         layout = QVBoxLayout(self)
 
@@ -62,14 +64,20 @@ class TargetDrawer(QWidget):
         self.track_btn.clicked.connect(lambda: self._target_id and self.track_requested.emit(self._target_id))
         research_btn = QPushButton("Research")
         research_btn.clicked.connect(lambda: self._target_id and self.research_requested.emit(self._target_id))
+        search_btn = QPushButton("Search Google")
+        search_btn.clicked.connect(
+            lambda: self._target_id and open_google_image_search(self.name_label.text(), self._kind)
+        )
         actions.addWidget(self.track_btn)
         actions.addWidget(research_btn)
+        actions.addWidget(search_btn)
         layout.addLayout(actions)
 
         layout.addStretch()
 
-    def show_target(self, target_id: str, name: str, subtitle: str) -> None:
+    def show_target(self, target_id: str, name: str, subtitle: str, kind: str | None = None) -> None:
         self._target_id = target_id
+        self._kind = kind
         self.name_label.setText(name)
         self.subtitle_label.setText(subtitle)
         self.track_btn.setChecked(False)

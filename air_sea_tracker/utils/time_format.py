@@ -5,6 +5,15 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 
+def parse_iso(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def age_label(last_update: datetime | None) -> str:
     """Short relative age for table cells, e.g. 'live', '42s ago', '3m ago'."""
     if last_update is None:
@@ -19,6 +28,19 @@ def age_label(last_update: datetime | None) -> str:
     if age < 3600:
         return f"{int(age // 60)}m ago"
     return f"{int(age // 3600)}h ago"
+
+
+def eta_label(eta_rfc3339: str | None) -> str:
+    """Local-time readout for a future ETA string as returned by VesselAPI
+    (e.g. '2026-08-18T04:00:00Z'), e.g. 'Aug 18, 04:00' — falls back to the
+    raw string if it doesn't parse rather than hiding a real value."""
+    if not eta_rfc3339:
+        return "—"
+    try:
+        ts = datetime.fromisoformat(eta_rfc3339.replace("Z", "+00:00"))
+    except ValueError:
+        return eta_rfc3339
+    return ts.astimezone().strftime("%b %d, %H:%M")
 
 
 def timestamp_with_age(last_update: datetime | None) -> str:

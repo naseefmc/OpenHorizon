@@ -81,7 +81,8 @@ CREATE TABLE IF NOT EXISTS ports (
     country         TEXT,
     latitude        REAL NOT NULL,
     longitude       REAL NOT NULL,
-    geofence_radius_km REAL DEFAULT 5.0
+    geofence_radius_km REAL DEFAULT 5.0,
+    unlocode        TEXT
 );
 
 CREATE TABLE IF NOT EXISTS airports (
@@ -150,5 +151,9 @@ def _apply_column_migrations(conn: sqlite3.Connection) -> None:
     idempotently, until one exists."""
     try:
         conn.execute("ALTER TABLE vessels ADD COLUMN ais_class TEXT")
+    except sqlite3.OperationalError:
+        pass  # column already exists
+    try:
+        conn.execute("ALTER TABLE ports ADD COLUMN unlocode TEXT")
     except sqlite3.OperationalError:
         pass  # column already exists

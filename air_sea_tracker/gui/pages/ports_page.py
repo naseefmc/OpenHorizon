@@ -8,16 +8,25 @@ justify the complexity here.
 
 from __future__ import annotations
 
+import asyncio
+import logging
+
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QListWidgetItem, QPushButton,
+    QHBoxLayout, QInputDialog, QLabel, QListWidgetItem, QPushButton,
     QSpinBox, QSplitter, QVBoxLayout, QWidget,
 )
 from PySide6.QtCore import Qt
 
-from gui.widgets.copyable_list import CopyableListWidget
+from config.credentials import VESSELAPI_API_KEY, get_credential
+from gui.widgets.copyable_list import SEARCH_KIND_ROLE, SEARCH_TEXT_ROLE, CopyableListWidget
 from services import geofence_service, port_service
+from services.ais_providers.vesselapi_provider import VesselApiError, fetch_inbound
+from services.rate_limiter import MonthlyRateLimiter
 from services.target_manager import TargetManager
+from utils.time_format import eta_label
+
+logger = logging.getLogger(__name__)
 
 REFRESH_MS = 5000
 
@@ -27,6 +36,7 @@ class PortsPage(QWidget):
         super().__init__(parent)
         self._target_manager = target_manager
         self._selected_port = None
+        self._vesselapi_rate_limiter = MonthlyRateLimiter(name="vesselapi", monthly_limit=150)
 
         root = QHBoxLayout(self)
         root.setContentsMargins(12, 12, 12, 12)
@@ -84,6 +94,21 @@ class PortsPage(QWidget):
         self.radar_list = CopyableListWidget()
         right.addWidget(self.radar_list)
 
+        vesselapi_row = QHBoxLayout()
+        self.unlocode_label = QLabel("VesselAPI UN/LOCODE: not set")
+        vesselapi_row.addWidget(self.unlocode_label)
+        set_unlocode_btn = QPushButton("Set…")
+        set_unlocode_btn.clicked.connect(self._on_set_unlocode)
+        vesselapi_row.addWidget(set_unlocode_btn)
+        self.vesselapi_btn = QPushButton("Check VesselAPI Inbound")
+        self.vesselapi_btn.clicked.connect(self._on_check_vesselapi_inbound)
+        vesselapi_row.addWidget(self.vesselapi_btn)
+        vesselapi_row.addStretch(1)
+        right.addLayout(vesselapi_row)
+
+        self.vesselapi_list = CopyableListWidget()
+        right.addWidget(self.vesselapi_list)
+
         root.addLayout(right, stretch=1)
 
         self._refresh_timer = QTimer(self)
@@ -117,7 +142,78 @@ class PortsPage(QWidget):
 
     def _on_port_selected(self, current: QListWidgetItem | None, _previous) -> None:
         self._selected_port = current.data(Qt.UserRole) if current else None
+        self._update_unlocode_label()
+        self.vesselapi_list.clear()
         self.refresh_detail()
+
+    def _update_unlocode_label(self) -> None:
+        port = self._selected_port
+        code = port.unlocode if port else None
+        self.unlocode_label.setText(f"VesselAPI UN/LOCODE: {code or 'not set'}")
+
+    def _on_set_unlocode(self) -> None:
+        port = self._selected_port
+        if port is None:
+            return
+        text, ok = QInputDialog.getText(
+            self, "VesselAPI UN/LOCODE",
+            f"UN/LOCODE for {port.name} (e.g. HRSPU) — VesselAPI's inbound-ETA "
+            "endpoint is keyed by this code; VesselAPI's own port search doesn't "
+            "return it, so it has to be entered manually:",
+            text=port.unlocode or "",
+        )
+        if not ok:
+            return
+        code = text.strip().upper() or None
+        conn = self._target_manager.db_conn
+        if conn is not None:
+            port_service.set_unlocode(conn, port.port_id, code)
+        port.unlocode = code
+        self._update_unlocode_label()
+        self.vesselapi_list.clear()
+
+    def _on_check_vesselapi_inbound(self) -> None:
+        port = self._selected_port
+        if port is None:
+            return
+        if not port.unlocode:
+            self.vesselapi_list.clear()
+            self.vesselapi_list.addItem("Set a UN/LOCODE for this port first")
+            return
+        api_key = get_credential(VESSELAPI_API_KEY)
+        if not api_key:
+            self.vesselapi_list.clear()
+            self.vesselapi_list.addItem("VesselAPI not configured (add an API key in Settings)")
+            return
+        if not self._vesselapi_rate_limiter.can_call():
+            self.vesselapi_list.clear()
+            self.vesselapi_list.addItem(
+                f"VesselAPI monthly quota exhausted ({self._vesselapi_rate_limiter.quota_summary()})"
+            )
+            return
+        self.vesselapi_btn.setEnabled(False)
+        self.vesselapi_list.clear()
+        self.vesselapi_list.addItem("Checking VesselAPI (can take up to ~30s)…")
+        asyncio.ensure_future(self._check_vesselapi_inbound(port.unlocode, api_key))
+
+    async def _check_vesselapi_inbound(self, unlocode: str, api_key: str) -> None:
+        try:
+            inbound = await fetch_inbound(unlocode, api_key)
+        except Exception as exc:
+            logger.warning("VesselAPI inbound check failed: %s", exc)
+            self.vesselapi_list.clear()
+            self.vesselapi_list.addItem("VesselAPI request failed — see logs")
+            self.vesselapi_btn.setEnabled(True)
+            return
+        self._vesselapi_rate_limiter.record_call()
+        self.vesselapi_list.clear()
+        if not inbound:
+            self.vesselapi_list.addItem("No vessels currently declaring this port as destination")
+        for v in inbound:
+            extra = f" · draught {v.draught:.0f}m" if v.draught else ""
+            display = f"{v.name or v.mmsi} — ETA {eta_label(v.eta)}{extra}"
+            self._add_vessel_item(self.vesselapi_list, display, v.name or v.mmsi)
+        self.vesselapi_btn.setEnabled(True)
 
     def refresh_detail(self) -> None:
         port = self._selected_port
@@ -129,19 +225,28 @@ class PortsPage(QWidget):
             return
 
         vessels = self._target_manager.all_vessels()
-        self.detail_label.setText(
-            f"{port.name} — geofence {port.geofence_radius_km:.0f} km · {len(vessels)} vessel(s) currently live"
-        )
         groups = geofence_service.port_traffic(port, vessels)
+        nearby_count = sum(len(v) for v in groups.values())
+        self.detail_label.setText(
+            f"{port.name} — geofence {port.geofence_radius_km:.0f} km · {nearby_count} vessel(s) near this port"
+        )
         for status, vessel_list in groups.items():
             lst = self.status_lists[status]
             for v in vessel_list:
-                lst.addItem(v.name or v.mmsi)
+                self._add_vessel_item(lst, v.name or v.mmsi, v.name or v.mmsi)
             if not vessel_list:
                 lst.addItem("—")
 
         radar_hits = geofence_service.inbound_radar(port, vessels, self.radar_radius_spin.value())
         for vessel, distance_km in radar_hits:
-            self.radar_list.addItem(f"{vessel.name or vessel.mmsi} — {distance_km:.0f} km out, heading in")
+            display = f"{vessel.name or vessel.mmsi} — {distance_km:.0f} km out, heading in"
+            self._add_vessel_item(self.radar_list, display, vessel.name or vessel.mmsi)
         if not radar_hits:
             self.radar_list.addItem("No inbound vessels detected in range")
+
+    @staticmethod
+    def _add_vessel_item(lst: CopyableListWidget, display_text: str, search_name: str) -> None:
+        item = QListWidgetItem(display_text)
+        item.setData(SEARCH_TEXT_ROLE, search_name)
+        item.setData(SEARCH_KIND_ROLE, "vessel")
+        lst.addItem(item)

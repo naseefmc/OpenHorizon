@@ -6,15 +6,17 @@ from datetime import datetime, timedelta, timezone
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QListWidgetItem, QPushButton, QVBoxLayout, QWidget,
 )
 
 from database.repository import track_stats
 from gui.map.live_map import LiveMap
-from gui.widgets.copyable_list import CopyableListWidget
+from gui.widgets.copyable_list import SEARCH_KIND_ROLE, SEARCH_TEXT_ROLE, CopyableListWidget
 from gui.widgets.telemetry_widget import TelemetryWidget
 from services.target_manager import TargetManager
+from utils.time_format import age_label, parse_iso
 from utils.units import speed_label
+from utils.web_search import open_google_image_search
 
 RANGES = {"Live (1h)": 1, "24 hours": 24, "7 days": 24 * 7}
 
@@ -35,13 +37,29 @@ class HistoryPage(QWidget):
         self.search_box.textChanged.connect(self._apply_filter)
         left.addWidget(self.search_box)
 
+        type_row = QHBoxLayout()
+        self.aircraft_checkbox = QCheckBox("Aircraft")
+        self.aircraft_checkbox.setChecked(True)
+        self.aircraft_checkbox.toggled.connect(self._apply_filter)
+        self.vessel_checkbox = QCheckBox("Vessel")
+        self.vessel_checkbox.setChecked(True)
+        self.vessel_checkbox.toggled.connect(self._apply_filter)
+        type_row.addWidget(self.aircraft_checkbox)
+        type_row.addWidget(self.vessel_checkbox)
+        left.addLayout(type_row)
+
         self.target_list = CopyableListWidget()
         self.target_list.currentItemChanged.connect(self._on_target_selected)
         left.addWidget(self.target_list, stretch=1)
 
+        buttons_row = QHBoxLayout()
         refresh_btn = QPushButton("Refresh list")
         refresh_btn.clicked.connect(self.refresh_target_list)
-        left.addWidget(refresh_btn)
+        buttons_row.addWidget(refresh_btn)
+        search_btn = QPushButton("Search Google")
+        search_btn.clicked.connect(self._on_search_selected)
+        buttons_row.addWidget(search_btn)
+        left.addLayout(buttons_row)
 
         left_widget = QWidget()
         left_widget.setLayout(left)
@@ -77,24 +95,41 @@ class HistoryPage(QWidget):
 
     def refresh_target_list(self) -> None:
         self._known = self._target_manager.known_targets()
-        self._apply_filter(self.search_box.text())
+        self._apply_filter()
 
-    def _apply_filter(self, text: str) -> None:
+    def _apply_filter(self, _changed: object = None) -> None:
         current_id = self.target_list.currentItem().data(Qt.UserRole) if self.target_list.currentItem() else None
         self.target_list.clear()
-        needle = text.strip().lower()
+        needle = self.search_box.text().strip().lower()
+        show_aircraft = self.aircraft_checkbox.isChecked()
+        show_vessel = self.vessel_checkbox.isChecked()
         for row in self._known:
+            if row["target_type"] == "aircraft" and not show_aircraft:
+                continue
+            if row["target_type"] == "vessel" and not show_vessel:
+                continue
             haystack = f"{row['name']} {row['target_id']}".lower()
             if needle and needle not in haystack:
                 continue
-            item = QListWidgetItem(f"{row['name']} ({row['target_type']})")
+            last_seen = age_label(parse_iso(row.get("last_seen")))
+            item = QListWidgetItem(f"{row['name']} ({row['target_type']}) — last seen {last_seen}")
             item.setData(Qt.UserRole, row["target_id"])
+            item.setData(SEARCH_TEXT_ROLE, row["name"])
+            item.setData(SEARCH_KIND_ROLE, row["target_type"])
             self.target_list.addItem(item)
         if current_id:
             for i in range(self.target_list.count()):
                 if self.target_list.item(i).data(Qt.UserRole) == current_id:
                     self.target_list.setCurrentRow(i)
                     break
+
+    def _on_search_selected(self) -> None:
+        current = self.target_list.currentItem()
+        if current is None:
+            return
+        open_google_image_search(
+            current.data(SEARCH_TEXT_ROLE) or current.text(), current.data(SEARCH_KIND_ROLE)
+        )
 
     def _on_target_selected(self, current: QListWidgetItem | None, _previous) -> None:
         self._on_load()

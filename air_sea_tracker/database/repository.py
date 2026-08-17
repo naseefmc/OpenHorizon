@@ -206,17 +206,26 @@ def purge_history_older_than(conn: sqlite3.Connection, retention_days: int) -> i
 
 
 def list_known_targets(conn: sqlite3.Connection) -> list[dict]:
-    """Distinct targets with history, for the History Mode picker (SDR §8)."""
+    """Distinct targets with history, for the History Mode picker (SDR §8).
+
+    last_seen is the most recent position_history timestamp for the target
+    (not current_positions.updated_at) so it reflects an actual logged
+    detection and survives even if the target has since expired out of the
+    live cache."""
     rows = conn.execute(
         """SELECT DISTINCT t.target_id, t.target_type,
-                  COALESCE(v.name, v.mmsi, a.registration, a.callsign, t.target_id) AS name
+                  COALESCE(v.name, v.mmsi, a.registration, a.callsign, t.target_id) AS name,
+                  (SELECT MAX(h.timestamp) FROM position_history h WHERE h.target_id = t.target_id) AS last_seen
            FROM targets t
            LEFT JOIN vessels v ON v.target_id = t.target_id
            LEFT JOIN aircraft a ON a.icao24 = t.target_id
            WHERE EXISTS (SELECT 1 FROM position_history h WHERE h.target_id = t.target_id)
            ORDER BY name"""
     ).fetchall()
-    return [{"target_id": r["target_id"], "target_type": r["target_type"], "name": r["name"]} for r in rows]
+    return [
+        {"target_id": r["target_id"], "target_type": r["target_type"], "name": r["name"], "last_seen": r["last_seen"]}
+        for r in rows
+    ]
 
 
 def load_track(conn: sqlite3.Connection, target_id: str, since: datetime | None = None) -> list[dict]:

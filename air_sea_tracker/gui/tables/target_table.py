@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QApplication, QTableView, QWidget
+from PySide6.QtWidgets import QApplication, QMenu, QTableView, QWidget
 from PySide6.QtCore import Signal
 
 from gui.tables.target_model import TargetTableModel
+from utils.web_search import open_google_image_search
 
 
 class TargetTable(QTableView):
@@ -34,6 +35,21 @@ class TargetTable(QTableView):
             self._copy_selection()
             return
         super().keyPressEvent(event)
+
+    def contextMenuEvent(self, event) -> None:
+        index = self.indexAt(event.pos())
+        menu = QMenu(self)
+        menu.addAction("Copy", self._copy_selection)
+        if index.isValid():
+            name = self._model.name_at(index.row())
+            if name:
+                kind = self._model.kind_at(index.row())
+                label = name if len(name) <= 40 else f"{name[:37]}..."
+                menu.addAction(
+                    f'Search "{label}" on Google Images',
+                    lambda: open_google_image_search(name, kind),
+                )
+        menu.exec(event.globalPos())
 
     def _copy_selection(self) -> None:
         indexes = self.selectionModel().selectedIndexes()

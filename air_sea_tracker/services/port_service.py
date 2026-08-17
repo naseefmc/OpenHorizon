@@ -20,6 +20,16 @@ def nearest_ports(conn: sqlite3.Connection, observer_lat: float, observer_lon: f
             port_id=r["port_id"], name=r["name"], country=r["country"],
             latitude=r["latitude"], longitude=r["longitude"],
             geofence_radius_km=r["geofence_radius_km"] or 5.0,
+            unlocode=r["unlocode"],
         )
         for _distance, r in scored[:count]
     ]
+
+
+def set_unlocode(conn: sqlite3.Connection, port_id: str, unlocode: str | None) -> None:
+    """Persists a user-entered UN/LOCODE for a port (VesselAPI's inbound-ETA
+    endpoint is keyed by UN/LOCODE, and neither VesselAPI's own port search
+    nor its radius search returns one — confirmed live, not assumed — so
+    there's no way to auto-resolve it; the user supplies it once)."""
+    conn.execute("UPDATE ports SET unlocode = ? WHERE port_id = ?", (unlocode, port_id))
+    conn.commit()

@@ -13,3 +13,4 @@ class Port:
     latitude: float = 0.0
     longitude: float = 0.0
     geofence_radius_km: float = 5.0
+    unlocode: str | None = None  # UN/LOCODE, user-entered (SDR has no source for this) — powers VesselAPI inbound lookup
