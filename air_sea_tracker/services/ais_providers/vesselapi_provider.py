@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 RADIUS_URL = "https://api.vesselapi.com/v1/location/vessels/radius"
 INBOUND_URL_TEMPLATE = "https://api.vesselapi.com/v1/port/{unlocode}/inbound"
+VESSEL_DETAILS_URL_TEMPLATE = "https://api.vesselapi.com/v1/vessel/{id}"
 POLL_INTERVAL_SECONDS = 1800  # 30 min — see module docstring re: 150 calls/month budget
 MONTHLY_CALL_LIMIT = 150
 MAX_RADIUS_M = 100_000  # API-enforced ceiling
@@ -130,6 +131,65 @@ class VesselApiProvider(AISProvider):
             navigation_status=str(nav_status) if nav_status is not None else None,
             source="vesselapi",
         )
+
+
+@dataclass
+class VesselDetails:
+    length_m: float | None
+    breadth_m: float | None
+    vessel_type: str | None
+    year_built: int | None
+    draught_m: float | None
+    gross_tonnage: float | None
+    call_sign: str | None
+    home_port: str | None
+
+
+async def fetch_vessel_details(
+    mmsi: str | None, imo: str | None, api_key: str, timeout_seconds: float = 30.0
+) -> VesselDetails | None:
+    """GET /v1/vessel/{id} — static vessel data (dimensions, type, year
+    built, etc.), the "Other REST API" fallback source for value-estimate
+    inputs the live position feeds don't carry (RADIUS_URL's position
+    reports have no length/dimensions at all). Works by MMSI as well as
+    IMO — confirmed live, unlike Wikidata enrichment which requires an
+    IMO — so it can fill the gap for vessels with no known IMO too.
+    Returns None on a 404 (not in VesselAPI's static registry) rather
+    than raising, since that's an expected/common outcome, not an error.
+    """
+    if imo:
+        vessel_id, id_type = imo, "imo"
+    elif mmsi:
+        vessel_id, id_type = mmsi, "mmsi"
+    else:
+        return None
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            VESSEL_DETAILS_URL_TEMPLATE.format(id=vessel_id),
+            params={"filter.idType": id_type},
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=aiohttp.ClientTimeout(total=timeout_seconds),
+        ) as resp:
+            if resp.status == 404:
+                return None
+            if resp.status != 200:
+                raise VesselApiError(f"VesselAPI vessel-details lookup failed: HTTP {resp.status}")
+            payload = await resp.json()
+
+    v = payload.get("vessel") or {}
+    if not v:
+        return None
+    return VesselDetails(
+        length_m=v.get("length"),
+        breadth_m=v.get("breadth"),
+        vessel_type=v.get("vessel_type"),
+        year_built=v.get("year_built"),
+        draught_m=v.get("draught_calculated_avg"),
+        gross_tonnage=v.get("gross_tonnage"),
+        call_sign=v.get("call_sign"),
+        home_port=v.get("home_port"),
+    )
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

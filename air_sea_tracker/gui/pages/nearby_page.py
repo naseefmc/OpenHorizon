@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Callable
 
 from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QSplitter, QVBoxLayout, QWidget
 from PySide6.QtCore import Qt
 
+from config.credentials import VESSELAPI_API_KEY, get_credential
 from config.settings import Settings
 from gui.map.live_map import LiveMap
 from gui.map.map_controls import MapControls
@@ -18,10 +20,14 @@ from gui.panels.target_drawer import TargetDrawer
 from gui.tables.target_table import TargetTable
 from models.aircraft import Aircraft
 from services import enrichment_service, value_estimator
+from services.ais_providers.vesselapi_provider import fetch_vessel_details
 from services.geo_service import distance_and_bearing, is_geometrically_visible
+from services.rate_limiter import MonthlyRateLimiter
 from services.target_manager import TargetManager
 from utils.time_format import timestamp_with_age
 from utils.units import speed_label
+
+logger = logging.getLogger(__name__)
 
 MAP_REFRESH_MS = 2000  # SDR §24: map refresh ~1-5s in Nearby Mode
 
@@ -34,6 +40,7 @@ class NearbyPage(QWidget):
         self._target_manager = target_manager
         self._settings = settings
         self._selected_id: str | None = None
+        self._vesselapi_rate_limiter = MonthlyRateLimiter(name="vesselapi", monthly_limit=150)
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -268,8 +275,7 @@ class NearbyPage(QWidget):
         dialog.show()
         asyncio.ensure_future(self._run_research(dialog, target, is_aircraft))
 
-    @staticmethod
-    async def _run_research(dialog: ResearchDialog, target, is_aircraft: bool) -> None:
+    async def _run_research(self, dialog: ResearchDialog, target, is_aircraft: bool) -> None:
         if is_aircraft:
             result = await enrichment_service.research_aircraft(target.registration, target.icao24)
             dialog.show_result(result)
@@ -285,7 +291,34 @@ class NearbyPage(QWidget):
                     build_year = int(f.value[:4])
                 except ValueError:
                     pass
-        estimate = value_estimator.estimate_vessel_value(target.length_m, target.ship_type, build_year)
+
+        length_m = target.length_m
+        ship_type = target.ship_type
+
+        # Live position feeds carry no dimensions at all, so length_m is
+        # routinely missing — VesselAPI's /vessel/{id} static-data lookup
+        # can fill that gap (by MMSI too, unlike Wikidata's IMO-only
+        # enrichment above), but it's on-demand here (only when the value
+        # estimate would otherwise have nothing to work with) and
+        # quota-gated, since the 150-calls/month budget is shared with the
+        # background poller and the Ports page's inbound-ETA lookup.
+        if length_m is None:
+            api_key = get_credential(VESSELAPI_API_KEY)
+            if api_key and self._vesselapi_rate_limiter.can_call():
+                try:
+                    details = await fetch_vessel_details(target.mmsi, target.imo, api_key)
+                except Exception as exc:
+                    details = None
+                    logger.warning("VesselAPI vessel-details lookup failed: %s", exc)
+                else:
+                    self._vesselapi_rate_limiter.record_call()
+                if details is not None:
+                    dialog.show_vesselapi_details(details)
+                    length_m = length_m or details.length_m
+                    ship_type = ship_type or details.vessel_type
+                    build_year = build_year or details.year_built
+
+        estimate = value_estimator.estimate_vessel_value(length_m, ship_type, build_year)
         dialog.show_value_estimate(estimate)
 
     def _on_drawer_closed(self) -> None:

@@ -16,6 +16,7 @@ from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QDialog, QFormLayout, QLabel, QVBoxLayout
 
 from services import enrichment_service, value_estimator
+from services.ais_providers.vesselapi_provider import VesselDetails
 
 
 class ResearchDialog(QDialog):
@@ -70,6 +71,26 @@ class ResearchDialog(QDialog):
             asyncio.ensure_future(self._load_photo(result.image_url))
         else:
             self.photo_label.setText("No photo available")
+
+    def show_vesselapi_details(self, details: VesselDetails) -> None:
+        """Appends static-data rows sourced from VesselAPI's /vessel/{id}
+        endpoint — additive to whatever show_result() already populated
+        from Wikidata, not a replacement, since the two sources cover
+        different fields (this has no owner/operator info; Wikidata has
+        no dimensions)."""
+        rows = [
+            ("Length (VesselAPI)", f"{details.length_m:.0f} m" if details.length_m else None),
+            ("Breadth (VesselAPI)", f"{details.breadth_m:.0f} m" if details.breadth_m else None),
+            ("Vessel type (VesselAPI)", details.vessel_type),
+            ("Year built (VesselAPI)", str(details.year_built) if details.year_built else None),
+            ("Call sign (VesselAPI)", details.call_sign),
+            ("Home port (VesselAPI)", details.home_port),
+        ]
+        for label, value in rows:
+            if value:
+                value_label = QLabel(str(value))
+                value_label.setWordWrap(True)
+                self.form.addRow(label, value_label)
 
     def show_value_estimate(self, estimate: value_estimator.ValueEstimate | None) -> None:
         if estimate is None:
