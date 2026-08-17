@@ -7,22 +7,24 @@ best-effort public-source enrichment.
 
 ## Disclaimer
 
-This repository, its code, and any data it displays or aggregates are
-provided **"as is," with no warranty of any kind**. Unauthorized use of
-this software or of the data it surfaces is not permitted. The repository
-owner assumes **no legal responsibility** for:
+OpenHorizon AirSea is a non-commercial hobby project created for informational, educational, and demonstration purposes.
 
-- the accuracy, completeness, timeliness, or reliability of any
-  tracking/positional data displayed by this app;
-- any use, misuse, or unauthorized use of this repository, its code, or
-  its data by any third party;
-- any consequences, direct or indirect, arising from reliance on this
-  software or its output.
+The software and all displayed or aggregated data are provided **"as is" and "as available," without warranties of any kind**, express or implied. This includes warranties of accuracy, reliability, availability, merchantability, fitness for a particular purpose, and non-infringement.
 
-AIS/ADS-B and enrichment data are pulled from third-party providers (see
-[Quick start](#quick-start) and the User Guide); each provider's own
-terms of service govern permitted use of their data, and it is the
-user's responsibility to comply with them.
+AIS, ADS-B, aircraft, vessel, weather, map, and enrichment data originate from third-party providers or public sources. This information may be delayed, incomplete, inaccurate, outdated, unavailable, estimated, or incorrectly identified.
+
+**OpenHorizon AirSea is not a certified navigation, air-traffic-control, vessel-traffic, collision-avoidance, flight-planning, voyage-planning, or emergency-response system.** It must not be relied upon for navigation, operational decisions, safety-critical purposes, surveillance, or emergencies. Always use official and approved aviation or maritime information sources.
+
+To the maximum extent permitted by applicable law, the project owner, authors, and contributors shall not be liable for any loss, damage, injury, claim, or other consequence arising from:
+
+* the use, misuse, or inability to use the software;
+* reliance on information displayed by the software;
+* inaccurate, delayed, incomplete, or unavailable data; or
+* third-party data, APIs, services, or content.
+
+Third-party data and services remain subject to their respective licences, terms of service, privacy policies, and usage restrictions. The open-source licence for this project does not grant any rights to third-party data. Users are responsible for ensuring that their use of the software and its data complies with applicable laws and provider terms.
+
+Unless otherwise stated, the original OpenHorizon AirSea source code is available under the **MIT License or the Apache License 2.0, at the user's option (`MIT OR Apache-2.0`)**. The complete licence terms are provided in `LICENSE-MIT` and `LICENSE-APACHE`. If this disclaimer conflicts with either licence, the applicable licence takes precedence.
 
 ## Status
 
@@ -69,7 +71,7 @@ GUI pages).
 
 ## License / data attribution
 
-App code has no license file yet — no license is granted for reuse; all
-rights reserved by default. See the Disclaimer above. Bundled seed data:
+App code is dual-licensed under MIT OR Apache-2.0 — see `LICENSE-MIT` and
+`LICENSE-APACHE`. Bundled seed data:
 - `air_sea_tracker/data/airports_seed.csv` — [OurAirports.com](https://ourairports.com/data/), Public Domain/CC0.
 - `air_sea_tracker/data/ports_seed.csv` — NGA World Port Index (Pub 150), US government public domain.
