@@ -8,6 +8,7 @@ Phase 1 sign-off — these are fine for nav-rail scaffolding only.
 NAV_ICONS = {
     "global": "\U0001F30D",
     "nearby": "◎",
+    "ocean": "\U0001F30A",
     "ports": "⚓",
     "airports": "✈",
     "history": "◷",

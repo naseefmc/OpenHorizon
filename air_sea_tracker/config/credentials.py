@@ -22,6 +22,7 @@ OPENSKY_CLIENT_SECRET = "opensky_client_secret"
 AIRPORT_PROVIDER_API_KEY = "airport_provider_api_key"
 PORT_PROVIDER_API_KEY = "port_provider_api_key"
 ENRICHMENT_PROVIDER_API_KEY = "enrichment_provider_api_key"
+GFW_API_KEY = "gfw_api_key"
 
 
 def get_credential(name: str) -> str | None:

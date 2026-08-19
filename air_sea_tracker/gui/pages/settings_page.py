@@ -21,6 +21,7 @@ from config.credentials import (
     AISSTREAM_API_KEY,
     BARENTSWATCH_CLIENT_ID,
     BARENTSWATCH_CLIENT_SECRET,
+    GFW_API_KEY,
     VESSELAPI_API_KEY,
     get_credential,
     set_credential,
@@ -91,6 +92,11 @@ class SettingsPage(QWidget):
         )
         self._add_quota_row(
             sources_form, MonthlyRateLimiter(name="vesselapi", monthly_limit=150).quota_summary
+        )
+
+        self.gfw_key_input = self._add_credential_row(
+            sources_form, "Global Fishing Watch", GFW_API_KEY, "GFW API token",
+            "Not configured — free at globalfishingwatch.org/our-apis (Ocean tab's Fishing activity layer)",
         )
 
         opensky_note = QLabel("OpenSky (ADS-B) — anonymous free tier, no key required")

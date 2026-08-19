@@ -12,6 +12,7 @@ from gui.pages.airports_page import AirportsPage
 from gui.pages.global_page import GlobalPage
 from gui.pages.history_page import HistoryPage
 from gui.pages.nearby_page import NearbyPage
+from gui.pages.ocean_page import OceanPage
 from gui.pages.ports_page import PortsPage
 from gui.pages.search_page import SearchPage
 from gui.pages.settings_page import SettingsPage
@@ -60,6 +61,9 @@ class MainWindow(QMainWindow):
         self.nearby_page = NearbyPage(target_manager, settings)
         self.nearby_page.observer_changed.connect(self._on_observer_changed)
         self._register_page("nearby", self.nearby_page)
+        self.ocean_page = OceanPage()
+        self.ocean_page.use_as_observer_requested.connect(self._on_ocean_use_as_observer)
+        self._register_page("ocean", self.ocean_page)
         self._register_page("ports", PortsPage(target_manager))
         self._register_page("airports", AirportsPage(target_manager))
         self._register_page("history", HistoryPage(target_manager))
@@ -91,6 +95,10 @@ class MainWindow(QMainWindow):
         self._settings.radius_km = self.nearby_page.observer_panel.radius_km
         self.top_bar.set_observer_location(f"{lat:.4f}, {lon:.4f}")
         self.observer_changed.emit(lat, lon)
+
+    def _on_ocean_use_as_observer(self, lat: float, lon: float) -> None:
+        self.nearby_page.apply_observer(lat, lon)
+        self._select_mode("nearby")
 
     def _on_search_target_activated(self, target_id: str) -> None:
         self._select_mode("nearby")

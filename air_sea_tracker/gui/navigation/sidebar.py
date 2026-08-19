@@ -7,10 +7,11 @@ from PySide6.QtWidgets import QButtonGroup, QPushButton, QVBoxLayout, QWidget
 
 from gui.theme.icons import NAV_ICONS
 
-MODES = ["global", "nearby", "ports", "airports", "history", "search", "settings"]
+MODES = ["global", "nearby", "ocean", "ports", "airports", "history", "search", "settings"]
 MODE_LABELS = {
     "global": "Global",
     "nearby": "Nearby",
+    "ocean": "Ocean",
     "ports": "Ports",
     "airports": "Airports",
     "history": "History",

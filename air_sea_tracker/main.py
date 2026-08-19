@@ -26,6 +26,9 @@ from services.ais_providers.base import ProviderStatus
 from services.geo_service import bounding_box_km
 from services.target_manager import TargetManager
 from utils.logging import setup_logging
+from utils.net import patch_tcp_nodelay
+
+patch_tcp_nodelay()
 
 logger = logging.getLogger(__name__)
 

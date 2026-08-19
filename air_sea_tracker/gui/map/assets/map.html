@@ -28,9 +28,12 @@
 <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
 <script>
   const map = L.map('map', { zoomControl: false }).setView([20, 0], 3);
-  const lightLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors',
-    maxZoom: 19,
+  // Same CARTO Voyager basemap as the Ocean & Environment tab's map, for
+  // visual consistency between the two — closest free/keyless equivalent
+  // to Google Maps' look (cream land, blue water, labeled road hierarchy).
+  const lightLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    maxZoom: 20,
   }).addTo(map);
   const darkLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
@@ -160,12 +163,44 @@
     }
   }
 
+  // --- Worldwide species search overlay (independent of observer/radius) ---
+  const SPECIES_COLORS = {
+    whale: '#1D4ED8', dolphin: '#0891B2', 'shark/ray': '#DC2626',
+    seabird: '#059669', 'crab/shrimp': '#EA580C',
+  };
+  let speciesLayer = null;
+
+  function plotSpeciesPoints(points) {
+    clearSpeciesPoints();
+    speciesLayer = L.markerClusterGroup({ maxClusterRadius: 40 });
+    for (const p of points) {
+      const color = SPECIES_COLORS[p.classification] || '#7C3AED';
+      const marker = L.circleMarker([p.lat, p.lon], {
+        radius: 5, color: '#0B1120', weight: 1, fillColor: color, fillOpacity: 0.85,
+      });
+      const dateLine = p.observed_on ? `<br>Observed: ${p.observed_on}` : '';
+      marker.bindPopup(`<b>${p.scientific_name}</b>${p.classification ? ' (' + p.classification + ')' : ''}${dateLine}`);
+      speciesLayer.addLayer(marker);
+    }
+    speciesLayer.addTo(map);
+    if (points.length) {
+      const bounds = L.latLngBounds(points.map(p => [p.lat, p.lon]));
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 6 });
+    }
+  }
+
+  function clearSpeciesPoints() {
+    if (speciesLayer) { map.removeLayer(speciesLayer); speciesLayer = null; }
+  }
+
   window.setObserver = setObserver;
   window.setRadiusKm = setRadiusKm;
   window.syncMarkers = syncMarkers;
   window.highlightMarker = highlightMarker;
   window.drawTrack = drawTrack;
   window.clearTrack = clearTrack;
+  window.plotSpeciesPoints = plotSpeciesPoints;
+  window.clearSpeciesPoints = clearSpeciesPoints;
   window.zoomIn = zoomIn;
   window.zoomOut = zoomOut;
   window.toggleDarkLayer = toggleDarkLayer;

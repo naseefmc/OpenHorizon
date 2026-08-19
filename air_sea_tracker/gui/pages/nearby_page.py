@@ -16,9 +16,11 @@ from gui.map.live_map import LiveMap
 from gui.map.map_controls import MapControls
 from gui.panels.observer_panel import ObserverPanel
 from gui.panels.research_dialog import ResearchDialog
+from gui.panels.species_search_panel import SpeciesSearchPanel
 from gui.panels.target_drawer import TargetDrawer
 from gui.tables.target_table import TargetTable
 from models.aircraft import Aircraft
+from ocean.providers.obis import ObisProvider
 from services import enrichment_service, value_estimator
 from services.ais_providers.vesselapi_provider import fetch_vessel_details
 from services.geo_service import distance_and_bearing, is_geometrically_visible
@@ -41,6 +43,7 @@ class NearbyPage(QWidget):
         self._settings = settings
         self._selected_id: str | None = None
         self._vesselapi_rate_limiter = MonthlyRateLimiter(name="vesselapi", monthly_limit=150)
+        self._obis = ObisProvider()
 
         root = QHBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -70,6 +73,12 @@ class NearbyPage(QWidget):
         self.observer_panel.vessel_class_filter_changed.connect(self._on_vessel_class_filter_changed)
         self.observer_panel.altitude_changed.connect(self._on_altitude_changed)
         controls_row.addWidget(self.observer_panel)
+
+        self.species_panel = SpeciesSearchPanel()
+        self.species_panel.search_requested.connect(self._on_species_search_requested)
+        self.species_panel.clear_requested.connect(self._on_species_clear_requested)
+        controls_row.addWidget(self.species_panel)
+
         controls_row.addStretch(1)
 
         self.map_controls = MapControls()
@@ -135,6 +144,39 @@ class NearbyPage(QWidget):
     def _on_altitude_changed(self, altitude_m: float) -> None:
         self._settings.observer_altitude_m = altitude_m
 
+    # --- worldwide species search ---
+
+    def _on_species_search_requested(self, taxon: str) -> None:
+        asyncio.ensure_future(self._run_worldwide_species_search(taxon))
+
+    def _on_species_clear_requested(self) -> None:
+        self.live_map.clear_species_points()
+        self.species_panel.set_status("")
+
+    async def _run_worldwide_species_search(self, taxon: str) -> None:
+        self.species_panel.set_status("Searching worldwide…")
+        try:
+            points = await self._obis.query_worldwide(taxon)
+        except Exception:
+            logger.exception("Worldwide species search failed for %s", taxon)
+            self.species_panel.set_status("Search failed — try again")
+            return
+        self.live_map.plot_species_points(
+            [
+                {
+                    "lat": p.latitude,
+                    "lon": p.longitude,
+                    "scientific_name": p.scientific_name,
+                    "classification": p.classification,
+                    "observed_on": p.observed_on,
+                }
+                for p in points
+            ]
+        )
+        self.species_panel.set_status(
+            f"{len(points)} sightings plotted (last 3 years)" if points else "No sightings found"
+        )
+
     # --- map controls (SDR §16-17, GUI §7) ---
 
     def _on_zoom_in(self) -> None:
@@ -167,6 +209,14 @@ class NearbyPage(QWidget):
         self._target_manager.set_radius(radius_km)
         self.live_map.set_observer(lat, lon)
         self.live_map.set_radius_km(lat, lon, radius_km)
+
+    def apply_observer(self, lat: float, lon: float) -> None:
+        """Live-set the observer location from outside this page (e.g. the
+        Ocean tab's "Use as observer location" button) — unlike
+        set_initial_observer, this goes through the normal apply path so
+        observer_changed fires and collectors restart for the new area."""
+        self.observer_panel.set_coordinates(lat, lon)
+        self._on_observer_set(lat, lon)
 
     # --- selection sync (map <-> table <-> drawer) ---
 

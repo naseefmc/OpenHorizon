@@ -82,3 +82,10 @@ class LiveMap(QWebEngineView):
 
     def clear_track(self) -> None:
         self._run_js("window.clearTrack && window.clearTrack();")
+
+    def plot_species_points(self, points: list[dict]) -> None:
+        """points: [{lat, lon, scientific_name, classification, observed_on}, ...]"""
+        self._run_js(f"window.plotSpeciesPoints && window.plotSpeciesPoints({json.dumps(points)});")
+
+    def clear_species_points(self) -> None:
+        self._run_js("window.clearSpeciesPoints && window.clearSpeciesPoints();")
