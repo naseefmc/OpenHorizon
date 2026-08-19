@@ -3,7 +3,9 @@
 Status: Phases 1–3 implemented (see SDR §29). Phases 4–5 (internet
 enrichment, value estimation, alerts, true visibility, satellite
 AIS/ADS-B, schedule APIs) are **not implemented** — see "What's not
-built yet" at the end of this document for the honest gap list.
+built yet" at the end of this document for the honest gap list. The
+separate **Ocean & Environment tab** (§1.8) is also implemented, under
+its own spec — see `OpenHorizon_Ocean_Environment_SDR.md`.
 
 ---
 
@@ -27,11 +29,12 @@ Requirements are in `requirements.txt` at the repo root; install into
 
 ### 1.2 First launch
 
-On first run the observer location defaults to a fixed coordinate in
-`config/settings.py` (`DEFAULT_OBSERVER_LAT`/`LON`). After that, your
-last-used location, radius, filters, map zoom, and theme are restored
-automatically (SDR §27.3) — this app never starts you from a blank
-slate on purpose.
+On first run the observer location is unset (lat/lon fields start at
+0,0) — there is no hardcoded default coordinate baked into source.
+Type or paste a location and click **Set** to get started. After
+that, your last-used location, radius, filters, map zoom, and theme
+are restored automatically (SDR §27.3) — this app never starts you
+from a blank slate on purpose once you've set one.
 
 ### 1.3 Nearby Mode (default view)
 
@@ -101,8 +104,52 @@ inferred status:
 OS keychain (`keyring`), never in a plaintext config file or QSettings.
 Saving a credential automatically restarts the AIS provider set to
 pick it up. OpenSky (ADS-B) needs no key on the anonymous free tier.
+Also holds the optional **Global Fishing Watch** token used by the
+Ocean & Environment tab's Fishing activity layer (§1.8) — the app
+needs restarting after adding it for the layer's checkbox to unlock.
 
 **Appearance**: theme (System/Light/Dark).
+
+### 1.8 Ocean & Environment Mode
+
+A separate global map for environmental/marine data, independent of
+the observer/radius that drives Nearby Mode — full spec in
+[`OpenHorizon_Ocean_Environment_SDR.md`](OpenHorizon_Ocean_Environment_SDR.md).
+
+- **Layer Controls** (left panel): toggle map overlays and data-only
+  layers by group — Ocean (bathymetry, depth contours, sea
+  temperature), Geography (coastline, rivers, lakes), Dynamic (waves,
+  currents, wind, rain, clouds, salinity, sea level, storms, sea ice),
+  Marine (species observations, fishing activity, marine protected
+  areas). A grayed-out checkbox with a tooltip means genuinely
+  unavailable, not broken — hover it to see why (e.g. sea ice has no
+  free source that can be queried or displayed the way every other
+  layer here is; fishing activity needs a free Global Fishing Watch
+  token from Settings first).
+- **Click anywhere on the map** to query every enabled layer at that
+  point; results populate the right-hand sidebar, each value tagged
+  with its source and freshness (live/near-real-time/forecast/
+  historical/static) — a field that's unavailable says so explicitly
+  rather than showing a blank or a zero.
+- **Time control** (top bar): scrub 24h back to 48h forward to see
+  forecast/historical conditions for the time-varying layers (SST,
+  wind, waves, rain, clouds, salinity, sea level). Static layers like
+  bathymetry and coastline ignore it.
+- **Species search**: with "Species observations" enabled, the
+  sidebar lists species observed near the clicked point (OBIS
+  records) with a last-observed date, filterable by a preset group
+  (whales & dolphins / sharks & rays / lobsters & crabs / seabirds) or
+  a typed scientific name.
+- **"Use as observer location"** button (sidebar, under a clicked
+  point's coordinates): jumps that point straight into Nearby Mode as
+  the tracking observer.
+
+**Worldwide species search** lives on the **Nearby** tab instead (next
+to the observer panel), not the Ocean tab — it's a standalone
+"go find whales/sharks/dolphins anywhere" tool independent of a
+clicked point: pick a group (or type a scientific name), click
+**Search worldwide**, and real OBIS sightings from the last 3 years
+plot as color-coded dots on the map.
 
 ---
 
@@ -232,6 +279,31 @@ source download.
   list/table-based (see §2.5); Nearby/Global/History all have maps.
 - **Phase 4 & 5 are not implemented** — see the notice at the top of
   this document.
+- **Ocean tab's free sources substitute for the original spec's named
+  ones** where those need a paid/registered account (e.g. Copernicus
+  Marine for salinity/sea level) — NOAA CoastWatch ERDDAP, EMODnet,
+  and NOAA NHC cover the same ground for free, verified live against
+  their real endpoints.
+- **Sea ice has no working layer** — real NOAA/NSIDC near-real-time
+  data exists, but it's only published on a polar-stereographic grid
+  (not lat/lon), so it can't be point-queried or displayed the way
+  every other Ocean layer is without implementing that grid's
+  projection math from scratch.
+- **Fishing activity (Global Fishing Watch)** needs a free account
+  token from Settings (§1.7) — the app hasn't been tested against a
+  real token, since that requires the user's own registered account.
+  Marine protected areas needs no token (public UNEP-WCMC service).
+- **Coastline/nearest-coast lookups (OpenStreetMap Overpass)** are a
+  small set of independently-run public mirrors that can be
+  unreachable from some networks (corporate firewalls, some security
+  tools) — the app tries three mirrors, then backs off for 10 minutes
+  rather than retrying and re-logging on every click. This is a
+  network-level condition the app can't route around.
+- **Ocean tab's basemap labels follow OpenStreetMap's local-language
+  names** — outside Latin-script regions (e.g. Russia, China, the
+  Middle East), place names render in the local script, not English.
+  Forcing English would mean switching both maps from raster tiles to
+  a vector-tile engine (MapLibre GL), which hasn't been done.
 
 ### 2.7 Where things live (quick map of the codebase)
 
@@ -253,9 +325,20 @@ air_sea_tracker/
 │   └── seed.py                 ports/airports CSV import
 ├── data/                       bundled seed CSVs (§2.5)
 ├── models/                     Vessel / Aircraft / Port / Airport dataclasses
+├── ocean/                      Ocean & Environment tab (§1.8)
+│   ├── providers/              one file per data source (GEBCO, NOAA SST,
+│   │                           OSM/Overpass, OBIS, salinity, sea level,
+│   │                           storms, depth contours, MPA, fishing activity, ...)
+│   ├── layers/layer_registry.py  the one list every layer checkbox/tile builds from
+│   ├── cache/ocean_cache.py    spatial TTL cache, per-data-kind lifetimes
+│   ├── models/                 OceanData, SourcedValue, species/wave/wind dataclasses
+│   └── ocean_controller.py     GUI -> providers orchestration + caching
 └── gui/
-    ├── pages/                  one file per nav item (nearby/global/history/...)
-    ├── panels/                 observer panel, target detail drawer
-    ├── map/                    LiveMap (QWebEngineView) + Leaflet map.html
+    ├── pages/                  one file per nav item (nearby/global/history/ocean/...)
+    ├── panels/                 observer panel, target detail drawer, ocean sidebar/
+    │                           layers panel, worldwide species search panel
+    ├── map/                    LiveMap + Leaflet map.html (Nearby/Global/History),
+    │                           OceanMap + ocean_map.html (Ocean tab)
+    ├── widgets/time_control.py Ocean tab's forecast/historical time scrubber
     └── tables/                 Qt table model + view
 ```

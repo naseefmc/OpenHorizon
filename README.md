@@ -3,7 +3,10 @@
 Cross-platform desktop app (PySide6) for live tracking of aircraft and
 vessels around an observer location, built free-first on public AIS/ADS-B
 data sources, with local history, port/airport intelligence, and
-best-effort public-source enrichment.
+best-effort public-source enrichment. Also includes a separate **Ocean &
+Environment tab** — click anywhere on a global map for bathymetry, sea
+temperature, salinity, sea level, coastline, weather, species observations,
+marine protected areas, and more, all from free public sources.
 
 ## Disclaimer
 
@@ -39,6 +42,15 @@ schedule APIs remain to be built. See
 [`Air_Sea_Live_Tracker_User_Guide_v1.md`](Air_Sea_Live_Tracker_User_Guide_v1.md)
 for the full "what's implemented / what's not" breakdown.
 
+The **Ocean & Environment tab** is implemented per its own spec
+([`OpenHorizon_Ocean_Environment_SDR.md`](OpenHorizon_Ocean_Environment_SDR.md)):
+bathymetry, depth contours, sea temperature, coastline/rivers/lakes,
+water body naming, waves/currents/wind/rain/clouds, salinity, sea level
+anomaly, storms, species observations (local + worldwide search), and
+marine protected areas — all free, keyless sources. Fishing activity
+needs a free Global Fishing Watch token (Settings); sea ice has no
+working free source (see the User Guide's Known Limitations for why).
+
 ## Quick start
 
 ```bash
@@ -51,15 +63,19 @@ On first launch, go to **Settings → Data Sources** and add API keys/
 credentials for whichever AIS providers you want (AISStream, BarentsWatch,
 VesselAPI, AISHub — all free-tier, none required to run the app). OpenSky
 (ADS-B) works anonymously with no key, subject to its free-tier rate
-limits.
+limits. The same Settings page has an optional Global Fishing Watch token
+for the Ocean tab's Fishing activity layer (also free-tier, also not
+required — every other Ocean layer works with no key at all).
 
 ## Documentation
 
 - [**User Guide & Operating Principles**](Air_Sea_Live_Tracker_User_Guide_v1.md) —
-  how to use every mode, and how the provider/caching architecture works
-  under the hood.
+  how to use every mode (including the Ocean tab), and how the
+  provider/caching architecture works under the hood.
 - [**Software Design Requirements**](Air_Sea_Live_Tracker_SDR_v2.md) — the
-  original spec this app is built against.
+  original spec the air/sea tracker is built against.
+- [**Ocean & Environment SDR**](OpenHorizon_Ocean_Environment_SDR.md) — the
+  original spec the Ocean tab is built against.
 - [**GUI Design Guide**](Air_Sea_Live_Tracker_GUI_Design_Guide_v2.md) —
   visual/interaction design reference.
 
@@ -67,7 +83,7 @@ limits.
 
 See the "Where things live" section of the User Guide for a map of the
 `air_sea_tracker/` package (collectors, AIS providers, services, database,
-GUI pages).
+`ocean/` providers, GUI pages).
 
 ## License / data attribution
 
