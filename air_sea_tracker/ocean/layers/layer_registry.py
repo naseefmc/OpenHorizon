@@ -95,14 +95,12 @@ def build_layers() -> list[LayerDef]:
         LayerDef("salinity", "Salinity", GROUP_DYNAMIC, salinity, phase=2),
         LayerDef("sea_level", "Sea level", GROUP_DYNAMIC, sea_level, phase=2),
         LayerDef("storms", "Storms", GROUP_DYNAMIC, storms, phase=2),
-        LayerDef(
-            "sea_ice", "Sea ice", GROUP_DYNAMIC, None, phase=2,
-            unavailable_reason=(
-                "No free source with a usable point-query or map overlay — NSIDC/OSI-SAF sea-ice "
-                "data exists but is only published on a polar-stereographic grid, not lat/lon, so "
-                "it can't be queried or displayed the way every other layer here is"
-            ),
-        ),
+        # Sea ice is deliberately omitted, not just disabled: real NOAA/NSIDC
+        # near-real-time data exists, but it's only published on a
+        # polar-stereographic grid, not lat/lon, so it can't be point-queried
+        # or tile-overlaid the way every other layer here is without
+        # implementing that grid's reprojection math from scratch. See the
+        # User Guide's Known Limitations.
         # --- Phase 2: MARINE (SDR §13, §11) ---
         LayerDef("marine_life", "Species observations", GROUP_MARINE, None, phase=2),
         LayerDef(

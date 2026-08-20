@@ -119,13 +119,13 @@ the observer/radius that drives Nearby Mode — full spec in
 - **Layer Controls** (left panel): toggle map overlays and data-only
   layers by group — Ocean (bathymetry, depth contours, sea
   temperature), Geography (coastline, rivers, lakes), Dynamic (waves,
-  currents, wind, rain, clouds, salinity, sea level, storms, sea ice),
+  currents, wind, rain, clouds, salinity, sea level, storms),
   Marine (species observations, fishing activity, marine protected
   areas). A grayed-out checkbox with a tooltip means genuinely
-  unavailable, not broken — hover it to see why (e.g. sea ice has no
-  free source that can be queried or displayed the way every other
-  layer here is; fishing activity needs a free Global Fishing Watch
-  token from Settings first).
+  unavailable, not broken — hover it to see why (e.g. fishing activity
+  needs a free Global Fishing Watch token from Settings first). Sea ice
+  isn't listed at all rather than shown disabled — see Known
+  Limitations below for why.
 - **Click anywhere on the map** to query every enabled layer at that
   point; results populate the right-hand sidebar, each value tagged
   with its source and freshness (live/near-real-time/forecast/
