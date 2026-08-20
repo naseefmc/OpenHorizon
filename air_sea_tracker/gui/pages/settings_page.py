@@ -28,6 +28,8 @@ from config.credentials import (
 )
 from config.settings import Settings
 from gui.theme.theme_manager import ThemeManager
+from ocean.providers.fishing_activity import DAILY_CALL_LIMIT as GFW_DAILY_CALL_LIMIT
+from ocean.providers.fishing_activity import MONTHLY_CALL_LIMIT as GFW_MONTHLY_CALL_LIMIT
 from services.rate_limiter import MonthlyRateLimiter, RateLimiter
 
 QUOTA_REFRESH_MS = 10_000
@@ -98,6 +100,16 @@ class SettingsPage(QWidget):
             sources_form, "Global Fishing Watch", GFW_API_KEY, "GFW API token",
             "Not configured — free at globalfishingwatch.org/our-apis (Ocean tab's Fishing activity layer)",
         )
+        self._add_quota_row(
+            sources_form, RateLimiter(name="gfw_daily", daily_limit=GFW_DAILY_CALL_LIMIT).quota_summary
+        )
+        self._add_quota_row(
+            sources_form, MonthlyRateLimiter(name="gfw_monthly", monthly_limit=GFW_MONTHLY_CALL_LIMIT).quota_summary
+        )
+        gfw_quota_note = QLabel("Counts requests made through this app only, not other tools sharing the same token.")
+        gfw_quota_note.setProperty("role", "secondary")
+        gfw_quota_note.setWordWrap(True)
+        sources_form.addRow("", gfw_quota_note)
 
         opensky_note = QLabel("OpenSky (ADS-B) — anonymous free tier, no key required")
         opensky_note.setProperty("role", "secondary")

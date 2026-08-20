@@ -10,10 +10,26 @@ to the controls themselves, not just query results.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QCheckBox, QComboBox, QLabel, QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from ocean.layers.layer_registry import LayerDef
+
+# Map-colour legends for layers whose WMS tiles use a continuous colour
+# ramp with no built-in key — NOAA ERDDAP's WMS doesn't support
+# GetLegendGraphic (verified live: returns a ServiceException), so this
+# is a static approximation of its default "Rainbow" palette against
+# each dataset's own colorBarMinimum/colorBarMaximum (from the
+# datasets' .das metadata), not a fetched legend image.
+_LEGENDS: dict[str, tuple[str, str]] = {
+    "salinity": ("32 PSU (fresher)", "37 PSU (saltier)"),
+    "sea_level": ("-200 cm (low)", "+200 cm (high)"),
+}
+_LEGEND_GRADIENT = (
+    "qlineargradient(x1:0, y1:0, x2:1, y2:0,"
+    " stop:0 #3a4cc0, stop:0.25 #1fb8c4, stop:0.5 #2ecc71,"
+    " stop:0.75 #f2d13a, stop:1 #e0392b)"
+)
 
 # Common-name presets mapped to real WoRMS/OBIS taxonomic groups (verified
 # live against api.obis.org/v3/occurrence — each returns real records).
@@ -64,8 +80,36 @@ class OceanLayersPanel(QWidget):
                 layout.addWidget(checkbox)
                 if layer_def.layer_id == "marine_life":
                     layout.addWidget(self._build_species_filter())
+                if layer_def.layer_id in _LEGENDS:
+                    min_text, max_text = _LEGENDS[layer_def.layer_id]
+                    layout.addWidget(self._build_legend(min_text, max_text))
 
         layout.addStretch()
+
+    @staticmethod
+    def _build_legend(min_text: str, max_text: str) -> QWidget:
+        box = QWidget()
+        box_layout = QVBoxLayout(box)
+        box_layout.setContentsMargins(16, 0, 4, 4)
+        box_layout.setSpacing(2)
+
+        bar = QLabel()
+        bar.setFixedHeight(8)
+        bar.setStyleSheet(f"background: {_LEGEND_GRADIENT}; border-radius: 2px;")
+        box_layout.addWidget(bar)
+
+        labels_row = QHBoxLayout()
+        labels_row.setContentsMargins(0, 0, 0, 0)
+        min_label = QLabel(min_text)
+        min_label.setProperty("role", "secondary")
+        max_label = QLabel(max_text)
+        max_label.setProperty("role", "secondary")
+        max_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        labels_row.addWidget(min_label)
+        labels_row.addWidget(max_label)
+        box_layout.addLayout(labels_row)
+
+        return box
 
     def _build_species_filter(self) -> QWidget:
         box = QWidget()
@@ -94,6 +138,22 @@ class OceanLayersPanel(QWidget):
     def species_filter(self) -> str | None:
         custom = self._species_custom.text().strip()
         return custom or _SPECIES_PRESETS[self._species_preset.currentIndex()][1]
+
+    def refresh_availability(self, layer_defs: list[LayerDef]) -> None:
+        """Re-checks each layer's availability (e.g. a credential-gated
+        provider like Global Fishing Watch) and enables/disables its
+        checkbox accordingly. `LayerDef.available` is a live check, not a
+        snapshot, so this reflects credentials added since the panel was
+        built without needing to reconstruct it."""
+        for layer_def in layer_defs:
+            checkbox = self._checkboxes.get(layer_def.layer_id)
+            if checkbox is None:
+                continue
+            available = layer_def.available
+            if checkbox.isEnabled() == available:
+                continue
+            checkbox.setEnabled(available)
+            checkbox.setToolTip("" if available else (layer_def.unavailable_reason or "Not available"))
 
     def enabled_layer_ids(self) -> frozenset[str]:
         return frozenset(layer_id for layer_id, cb in self._checkboxes.items() if cb.isChecked())

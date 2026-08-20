@@ -229,6 +229,16 @@ class OceanSidebar(QScrollArea):
                 self._field_row(form, "Sea level anomaly", data.sea_level_anomaly_cm, lambda v: f"{v:+.1f} cm")
             self._layout.addLayout(form)
 
+            hint = QLabel(
+                "Salinity: ~32-37 PSU typical, lower = fresher, higher = saltier. Sea level "
+                "anomaly: deviation from this location's long-term average, not tide or depth. "
+                "Map colours for both run blue/purple (low) to red (high) — hover a value above "
+                "for the exact scale."
+            )
+            hint.setWordWrap(True)
+            hint.setProperty("role", "secondary")
+            self._layout.addWidget(hint)
+
         if data.fishing_activity_hours is not None or data.marine_protected_area is not None:
             self._layout.addWidget(self._section_header("HUMAN ACTIVITY & PROTECTION"))
             form = QFormLayout()
@@ -237,6 +247,13 @@ class OceanSidebar(QScrollArea):
             if data.marine_protected_area is not None:
                 self._field_row(form, "Protected area", data.marine_protected_area, str)
             self._layout.addLayout(form)
+
+            fa = data.fishing_activity_hours
+            if fa is not None and fa.available and fa.timestamp:
+                freshness = QLabel(f"Fishing activity data covers up to {fa.timestamp} (GFW's pipeline lags real time by a few days).")
+                freshness.setWordWrap(True)
+                freshness.setProperty("role", "secondary")
+                self._layout.addWidget(freshness)
 
         if data.species is not None:
             self._layout.addWidget(self._section_header("SPECIES OBSERVATIONS"))

@@ -62,6 +62,17 @@ class OceanPage(QWidget):
         self.sidebar.use_as_observer.connect(self.use_as_observer_requested)
         body.addWidget(self.sidebar)
 
+    # --- tab lifecycle ------------------------------------------------------
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        # Credential-gated layers (e.g. Global Fishing Watch) may have been
+        # configured in Settings since this page was built, since
+        # build_layers()/OceanLayersPanel are only constructed once at
+        # startup — re-check on every tab switch so the checkbox enables
+        # without needing an app restart.
+        self.layers_panel.refresh_availability(self._layer_defs)
+
     # --- map lifecycle ----------------------------------------------------
 
     def _on_map_loaded(self, ok: bool) -> None:

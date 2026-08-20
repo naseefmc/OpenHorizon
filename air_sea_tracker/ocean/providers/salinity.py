@@ -63,7 +63,17 @@ class SalinityProvider(OceanProvider):
 
         return {
             "salinity": SourcedValue(
-                value=round(sss_val, 1), unit="PSU", source=self.name, status=STATUS_NEAR_REAL_TIME, timestamp=timestamp
+                value=round(sss_val, 1),
+                unit="PSU",
+                source=self.name,
+                status=STATUS_NEAR_REAL_TIME,
+                timestamp=timestamp,
+                note=(
+                    "Practical Salinity Units. Open ocean is typically ~32-37 PSU: lower means "
+                    "fresher water (river runoff, rain, ice melt), higher means saltier "
+                    "(evaporation). The map colour scale runs blue/purple (32, fresher) through "
+                    "green/yellow to red (37, saltier)."
+                ),
             )
         }
 

@@ -59,7 +59,18 @@ class SeaLevelProvider(OceanProvider):
 
         return {
             "sea_level_anomaly_cm": SourcedValue(
-                value=round(sla_m * 100, 1), unit="cm", source=self.name, status=STATUS_NEAR_REAL_TIME, timestamp=timestamp
+                value=round(sla_m * 100, 1),
+                unit="cm",
+                source=self.name,
+                status=STATUS_NEAR_REAL_TIME,
+                timestamp=timestamp,
+                note=(
+                    "How far sea level here is above (+) or below (-) the long-term average for "
+                    "this location, from satellite altimetry — not tide or absolute depth. Positive "
+                    "values can reflect warmer/expanded water or converging currents; negative can "
+                    "reflect cooler water or diverging currents. The map colour scale runs "
+                    "blue/purple (-200 cm, low) through green/yellow to red (+200 cm, high)."
+                ),
             )
         }
 
