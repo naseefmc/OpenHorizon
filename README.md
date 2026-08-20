@@ -91,3 +91,12 @@ App code is dual-licensed under MIT OR Apache-2.0 — see `LICENSE-MIT` and
 `LICENSE-APACHE`. Bundled seed data:
 - `air_sea_tracker/data/airports_seed.csv` — [OurAirports.com](https://ourairports.com/data/), Public Domain/CC0.
 - `air_sea_tracker/data/ports_seed.csv` — NGA World Port Index (Pub 150), US government public domain.
+
+The Ocean tab's optional fishing-activity layer is "Powered by
+[Global Fishing Watch](https://globalfishingwatch.org)". That data is
+made available under GFW's [CC BY-NC 4.0 terms of
+use](https://globalfishingwatch.org/our-apis/documentation#license-and-rate-limits)
+— noncommercial use only, subject to their daily/monthly API rate
+limits, using a token you register and configure yourself (Settings →
+Data Sources). It is not covered by this project's MIT/Apache-2.0
+licence, which applies to the app's own source code only.
